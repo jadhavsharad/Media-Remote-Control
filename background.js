@@ -1,14 +1,23 @@
+// =====================
+// Pairing
+// =====================
+const pairCode = Math.random()
+  .toString(36)
+  .slice(2, 8)
+  .toUpperCase();
 
-let webSocket = null;
-
-const pairCode = Math.random().toString(36).slice(2, 8).toUpperCase();
 console.log("🔑 Pair code:", pairCode);
 
-function connect() {
-  webSocket = new WebSocket('ws://localhost:3000');
+// =====================
+// WebSocket
+// =====================
+let socket = null;
 
-  webSocket.onopen = () => {
-    webSocket.send(
+function connectWebSocket() {
+  socket = new WebSocket("ws://localhost:3000");
+
+  socket.onopen = () => {
+    socket.send(
       JSON.stringify({
         type: "PAIR",
         pairCode
@@ -16,47 +25,47 @@ function connect() {
     );
   };
 
-  webSocket.onmessage = (event) => {
-    console.log(`websocket received message: ${event.data}`);
-    forwardToTab(JSON.parse(event.data));
+  socket.onmessage = (event) => {
+    const msg = JSON.parse(event.data);
+    forwardToActiveTab(msg);
   };
 
-  webSocket.onclose = (event) => {
-    console.log('websocket connection closed');
-    webSocket = null;
+  socket.onclose = () => {
+    console.log("❌ WS closed, reconnecting...");
+    socket = null;
+    setTimeout(connectWebSocket, 1000);
   };
 }
 
-function disconnect() {
-  if (webSocket == null) {
-    return;
-  }
-  webSocket.close();
-}
+connectWebSocket();
 
-connect();
-
-chrome.runtime.onMessage.addListener((msg) => {
-  console.log("Background received message: ", msg);
+// =====================
+// Runtime Messages
+// =====================
+chrome.runtime.onMessage.addListener((msg, sender, sendResponse) => {
   if (msg.type === "STATE_UPDATE") {
-    if (webSocket && webSocket.readyState === WebSocket.OPEN) {
-      webSocket.send(JSON.stringify(msg));
+    if (socket && socket.readyState === WebSocket.OPEN) {
+      socket.send(JSON.stringify(msg));
     }
   }
 
-  forwardToTab(msg);
+  if (msg.type === "GET_PAIRING_CODE") {
+    sendResponse({ pairCode });
+  }
 });
 
+// =====================
+// Command Forwarding
+// =====================
+function isAllowed(msg) {
+  return msg.action === "TOGGLE_PLAYBACK";
+}
 
-const forwardToTab = (msg) => {
+function forwardToActiveTab(msg) {
   if (!isAllowed(msg)) return;
+
   chrome.tabs.query({ active: true, currentWindow: true }, (tabs) => {
     if (!tabs.length) return;
     chrome.tabs.sendMessage(tabs[0].id, msg);
   });
-}
-
-function isAllowed(msg) {
-  console.log("isAllowed check for message: ", msg);
-  return msg.action === "TOGGLE_PLAYBACK";
 }
