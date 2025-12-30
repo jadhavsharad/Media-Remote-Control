@@ -1,13 +1,5 @@
-console.log("🎬 Content script active");
-
-// =====================
-// Playback State
-// =====================
 let currentVideo = null;
 
-// =====================
-// State Reporting
-// =====================
 function sendState(video) {
   chrome.runtime.sendMessage({
     type: "STATE_UPDATE",
@@ -15,26 +7,21 @@ function sendState(video) {
   });
 }
 
-// =====================
-// Video Attachment
-// =====================
 function attachVideo(video) {
   if (currentVideo === video) return;
-
+  if (currentVideo) {
+    currentVideo.removeEventListener("play", onPlay);
+    currentVideo.removeEventListener("pause", onPause);
+  }
   currentVideo = video;
-  console.log("🎥 Attached video element");
-
   video.addEventListener("play", () => sendState(video));
   video.addEventListener("pause", () => sendState(video));
 }
 
-// =====================
-// SPA Observer (YouTube-safe)
-// =====================
 function observeVideoElement() {
   const observer = new MutationObserver(() => {
     const video = document.querySelector("video");
-    if (video) attachVideo(video);
+    if (video) attachVideo(video), observer.disconnect();;
   });
 
   observer.observe(document.body, {
@@ -45,14 +32,9 @@ function observeVideoElement() {
 
 observeVideoElement();
 
-// =====================
-// Command Handler
-// =====================
+
 chrome.runtime.onMessage.addListener((msg) => {
   if (msg.action !== "TOGGLE_PLAYBACK") return;
   if (!currentVideo) return;
-
-  currentVideo.paused
-    ? currentVideo.play()
-    : currentVideo.pause();
+  currentVideo.paused ? currentVideo.play() : currentVideo.pause();
 });
