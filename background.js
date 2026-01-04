@@ -1,24 +1,73 @@
-const pairCode = Math.random().toString(36).slice(2, 8).toUpperCase();
+import TRIGGERS from "./constants.js"
 
-console.log("🔑 Pair code:", pairCode);
-
+const hostId = chrome.runtime.id;
 let socket = null;
+let SESSION_IDENTITY = null
 
-function connectWebSocket() {
-  socket = new WebSocket("ws://localhost:3000");
+function GENERATE_SESSION_IDENTITY() {
+  return Math.random().toString(36).slice(2, 8).toUpperCase();
+}
+
+function GET_SESSION_IDENTITY() {
+  return new Promise((resolve) => {
+    chrome.storage.local.get(["SESSION_IDENTITY"], (result) => {
+      if (result.SESSION_IDENTITY) {
+        resolve(result.SESSION_IDENTITY);
+      } else {
+        const newCode = GENERATE_SESSION_IDENTITY();
+        chrome.storage.local.set({ SESSION_IDENTITY: newCode }, () => {
+          resolve(newCode);
+        });
+      }
+    });
+  });
+}
+
+
+async function connectWebSocket() {
+  // implement error catch if server does not work it will show error and then only session identity generation
+  socket = new WebSocket("ws://localhost:3000"); 
+  SESSION_IDENTITY =  await GET_SESSION_IDENTITY();
 
   socket.onopen = () => {
-    socket.send(JSON.stringify({type: "PAIR", pairCode}) // TODO: ADD HOST BROWSER ID
+    socket.send(JSON.stringify({
+      type: TRIGGERS.REGISTER_HOST,
+      SESSION_IDENTITY,
+      hostId: hostId
+    })
     );
   };
 
   socket.onmessage = (event) => {
-    const msg = JSON.parse(event.data);
-    if (msg.type === "PAIR_SUCCESS") {
-      console.log("✅ Paired successfully with code:", msg.pairCode);
+    let response;
+    try {
+      response = JSON.parse(event.data);
+    } catch {
+      return;
     }
-    // forwardToActiveTab(msg);
-  };
+    
+    if (!response?.type) return;
+    
+    if (response.type === TRIGGERS.HOST_REGISTERED) {
+      console.log("Pair with the key: ", SESSION_IDENTITY)
+    }
+    if (response.type === TRIGGERS.REMOTE_JOIN_REQUEST) {
+      console.log(response.deviceId)
+      socket.send(JSON.stringify({
+        type: TRIGGERS.REMOTE_APPROVED,
+        deviceId: response.deviceId
+      }))
+    }
+    if (response.type === TRIGGERS.CONTROL_EVENT) {
+      chrome.tabs.query({ active: true, currentWindow: true }, (tabs) => {
+        if (!tabs.length) return;
+        chrome.tabs.sendMessage(tabs[0].id, response);
+      });
+    }
+    if (response.type === TRIGGERS.PAIR_INVALID) {
+      console.warn("Pair invalid:", response.reason);
+    }
+  }
 
   socket.onclose = () => {
     socket = null;
@@ -29,16 +78,17 @@ function connectWebSocket() {
 connectWebSocket();
 
 chrome.runtime.onMessage.addListener((msg, sender, sendResponse) => {
-  if (msg.type === "STATE_UPDATE") {
+  if (msg.type === TRIGGERS.STATE_UPDATE) {
+    console.log("State update:", msg.state);
     if (socket && socket.readyState === WebSocket.OPEN) {
       socket.send(JSON.stringify(msg));
     }
   }
 
-  if (msg.type === "GET_PAIRING_CODE") {
-    sendResponse({ pairCode });
-    return true;
-  }
+  // if (msg.type === "GET_PAIRING_CODE") {
+  //   sendResponse({ SESSION_IDENTITY });
+  //   return true;
+  // }
 });
 
 function isAllowed(msg) {
@@ -59,24 +109,24 @@ function forwardToActiveTab(msg) {
 
 chrome.tabs.onCreated.addListener(tab => {
   if (socket && socket.readyState === WebSocket.OPEN) {
-      socket.send(JSON.stringify({
-        type: "TAB_CREATED",
-        tabId: tab.id,
-        url: tab.url || "",
-        title: tab.title || "",
-        status: tab.status || ""
-      }));
-    }
+    socket.send(JSON.stringify({
+      type: "TAB_CREATED",
+      tabId: tab.id,
+      url: tab.url || "",
+      title: tab.title || "",
+      status: tab.status || ""
+    }));
+  }
   console.log("🆕 Created:", tab.id);
 });
 
 chrome.tabs.onRemoved.addListener(tabId => {
   if (socket && socket.readyState === WebSocket.OPEN) {
-      socket.send(JSON.stringify({
-        type: "TAB_CLOSED",
-        tabId: tabId
-      }));
-    }
+    socket.send(JSON.stringify({
+      type: "TAB_CLOSED",
+      tabId: tabId
+    }));
+  }
   console.log("❌ Removed:", tabId);
 });
 
@@ -101,10 +151,41 @@ chrome.tabs.onUpdated.addListener((tabId, changeInfo, tab) => {
 });
 
 
-function listAllTabs(){
+function listAllTabs() {
   chrome.tabs.query({}, (tabs) => {
     console.log("All open tabs:", tabs);
   });
 }
 
-listAllTabs();
+// listAllTabs();
+
+function getDeviceInfo() {
+  const info = {
+    userAgent: navigator.userAgent,
+    platform: navigator.platform,
+    language: navigator.language,
+    isOnline: navigator.onLine,
+    deviceMemory: navigator.deviceMemory || 'N/A',
+    isMobile: navigator.userAgentData ? navigator.userAgentData.mobile : undefined,
+    appName: navigator.appName,
+    appVersion: navigator.appVersion,
+    vendor: navigator.vendor,
+    hardwareConcurrency: navigator.hardwareConcurrency || 'N/A',
+    appCodeName: navigator.appCodeName,
+    product: navigator.product,
+    productSub: navigator.productSub,
+    buildID: navigator.buildID || 'N/A',
+    cookieEnabled: navigator.cookieEnabled,
+    doNotTrack: navigator.doNotTrack || 'N/A',
+    platform: navigator.platform,
+    extensionID: chrome.runtime.id
+
+
+
+
+  };
+  console.log("Device Information:", info);
+  return info;
+}
+
+// getDeviceInfo()
