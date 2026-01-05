@@ -1,13 +1,15 @@
-const ws = new WebSocket("ws://localhost:3000");
+const codeDiv = document.getElementById("PAIRING_CODE");
+const qrCanvas = document.getElementById("PAIRING_QR");
 
-ws.onopen = () => {
-  console.log("Popup WS connected");
-};
+chrome.runtime.sendMessage({ type: "GET_PAIRING_CODE" }, (res) => {
+  const pairCode = res.pairCode;
+  codeDiv.textContent = "Code: " + pairCode;
 
-document.getElementById("btn").onclick = () => {
-  ws.send(
-    JSON.stringify({
-      action: "TOGGLE_PLAYBACK"
-    })
-  );
-};
+  const url = `http://192.168.0.107:5173/?pair=${pairCode}`;
+
+  new QRCode(qrCanvas, {
+    text: url,
+    width: 200,
+    height: 200
+  });
+});
