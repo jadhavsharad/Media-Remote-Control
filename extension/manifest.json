@@ -1,0 +1,36 @@
+{
+  "manifest_version": 3,
+  "minimum_chrome_version": "116",
+  "name": "Remote Media Control",
+  "version": "0.1",
+  "permissions": [
+    "tabs",
+    "storage",
+    "offscreen"
+  ],
+  "host_permissions": [
+    "*://*.youtube.com/*",
+    "*://*.netflix.com/*",
+    "*://*.primevideo.com/*"
+  ],
+  "background": {
+    "service_worker": "background.js",
+    "type": "module"
+  },
+  "content_scripts": [
+    {
+      "matches": [
+        "*://*.youtube.com/*",
+        "*://*.netflix.com/*",
+        "*://*.primevideo.com/*"
+      ],
+      "js": [
+        "content.js"
+      ],
+      "run_at": "document_idle"
+    }
+  ],
+  "action": {
+    "default_popup": "popup.html"
+  }
+}
