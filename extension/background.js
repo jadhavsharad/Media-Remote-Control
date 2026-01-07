@@ -66,11 +66,12 @@ async function getMediaTabs() {
 
 function connectWebSocket() {
   socket = new WebSocket("ws://localhost:3001");
-
+  console.log("🖥️ BACKGROUND CONNECTING WS");
   socket.onopen = () => {
     socket.send(JSON.stringify({
       type: TRIGGERS.REGISTER_HOST
     }));
+    console.log("✅ BACKGROUND WS OPEN");
   };
 
   socket.onmessage = async (event) => {
@@ -86,6 +87,7 @@ function connectWebSocket() {
     switch (msg.type) {
 
       case TRIGGERS.HOST_REGISTERED: {
+          console.log("🆔 SESSION CREATED:", msg.SESSION_IDENTITY);
         onConnected(msg.SESSION_IDENTITY);
         chrome.storage.local.set({ SESSION_IDENTITY: msg.SESSION_IDENTITY });
         break;
@@ -95,7 +97,6 @@ function connectWebSocket() {
       case TRIGGERS.REMOTE_JOINED: {
         const { remoteId } = msg;
         REMOTE_CONTEXT.set(remoteId, { tabId: null });
-
         const tabs = await getMediaTabs();
         socket.send(JSON.stringify({
           type: TRIGGERS.MEDIA_TABS_LIST,
