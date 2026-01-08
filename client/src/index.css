@@ -1,0 +1,60 @@
+@import "tailwindcss";
+
+body {
+    background-color: #09090b; /* zinc-950 */
+}
+
+/* Custom Scrollbar for the tab list */
+.custom-scrollbar::-webkit-scrollbar {
+  width: 4px;
+}
+.custom-scrollbar::-webkit-scrollbar-track {
+  background: transparent;
+}
+.custom-scrollbar::-webkit-scrollbar-thumb {
+  background-color: #3f3f46;
+  border-radius: 20px;
+}
+
+.elegant-button {
+    background-color: #2a2a2a;
+    color: white;
+    font-weight: bold;
+    border-radius: 100px;
+    padding: 16px 32px;
+    border: solid 2px #3a3a3a;
+    cursor: pointer;
+    transition: all 0.2s ease-in-out;
+}
+
+.elegant-button:active {
+    transform: scale(0.96);
+}
+
+.elegant-button:disabled {
+    background-color: #1a1a1a;
+    color: #555555;
+    border: solid 2px #2a2a2a;
+    cursor: not-allowed;
+    transform: none;
+}
+
+input {
+    background-color: #18181b; /* zinc-900 */
+    color: white;
+    font-weight: bold;
+    border-radius: 100px;
+    padding: 16px 32px;
+    border: solid 2px #3a3a3a;
+    transition: border-color 0.2s;
+}
+
+input:focus {
+    outline: none;
+    border-color: #71717a; /* zinc-500 */
+}
+
+input:disabled {
+    opacity: 0.5;
+    cursor: not-allowed;
+}
