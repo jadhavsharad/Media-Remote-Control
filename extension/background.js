@@ -1,4 +1,4 @@
-import { TRIGGERS, MEDIA_URL_PATTERNS } from "./constants.js";
+import { TRIGGERS, MEDIA_URL_PATTERNS, CHANNELS, SESSION_EVENTS, MEDIA_EVENTS, CONTROL_EVENTS } from "./constants.js";
 
 let sessionIdentity = null;
 let connected = false;
@@ -44,15 +44,15 @@ async function getMediaTabs() {
 
 chrome.runtime.onMessage.addListener((msg, _, sendResponse) => {
   switch (msg.type) {
-    case TRIGGERS.FROM_SERVER:
+    case CHANNELS.FROM_SERVER:
       handleServerMessage(msg.payload);
       break;
 
-    case TRIGGERS.FROM_CONTENT_SCRIPT:
+    case CHANNELS.FROM_CONTENT_SCRIPT:
       sendToServer(msg.update);
       break;
 
-    case TRIGGERS.FROM_POPUP:
+    case CHANNELS.FROM_POPUP:
       handlePopup(msg.popup, sendResponse);
       return true;
   }
@@ -62,21 +62,21 @@ async function handleServerMessage(msg) {
   if (!msg?.type) return;
   if (msg.type === "WS_CLOSED") return;
   switch (msg.type) {
-    case TRIGGERS.HOST_REGISTERED: {
+    case SESSION_EVENTS.HOST_REGISTERED: {
       onConnected(msg.SESSION_IDENTITY);
       break;
     }
-    case TRIGGERS.REMOTE_JOINED: {
+    case SESSION_EVENTS.REMOTE_JOINED: {
       remoteContext.set(msg.remoteId, { tabId: null });
       const tabs = await getMediaTabs()
       sendToServer({
-        type: TRIGGERS.MEDIA_TABS_LIST,
+        type: MEDIA_EVENTS.MEDIA_TABS_LIST,
         remoteId: msg.remoteId,
         tabs
       })
       break;
     }
-    case TRIGGERS.SELECT_ACTIVE_TAB: {
+    case MEDIA_EVENTS.SELECT_ACTIVE_TAB: {
       const ctx = remoteContext.get(msg.remoteId);
       if (!ctx) return;
 
@@ -86,19 +86,19 @@ async function handleServerMessage(msg) {
       ctx.tabId = msg.tabId;
       break;
     }
-    case TRIGGERS.CONTROL_EVENT: {
+    case CONTROL_EVENTS.CONTROL_EVENT: {
       if (!isValidControlAction(msg.action)) return;
 
       const ctx = remoteContext.get(msg.remoteId);
       if (!ctx?.tabId) return;
 
       chrome.tabs.sendMessage(ctx.tabId, {
-        type: TRIGGERS.CONTROL_EVENT,
+        type: CONTROL_EVENTS.CONTROL_EVENT,
         action: msg.action
       });
       break;
     }
-    case TRIGGERS.PAIR_INVALID: {
+    case SESSION_EVENTS.PAIR_INVALID: {
       remoteContext.clear();
       onDisconnected();
       break;
@@ -123,7 +123,7 @@ function handlePopup(req, sendResponse) {
 
 async function sendToServer(payload) {
   chrome.runtime.sendMessage({
-    type: TRIGGERS.FROM_BACKGROUND,
+    type: CHANNELS.FROM_BACKGROUND,
     payload
   });
 }
