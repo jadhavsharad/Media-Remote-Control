@@ -51,55 +51,62 @@ function isValidMessage(msg) {
 
 const SESSION_TTL_MS = 24 * 60 * 60 * 1000; // 24 Hours
 
-setInterval(() => {
-  const t = now();
-  for (const [code, sessionId] of pairCodes.entries()) {
-    const session = hostSessions.get(sessionId);
-    if (!session || t > session.pairCodeExpiresAt) {
-      pairCodes.delete(code);
-      if (session && session.pairCode === code) {
-        session.pairCode = null;
-        session.pairCodeExpiresAt = 0;
+let cleanupInterval;
+
+function startCleanup() {
+
+  cleanupInterval = setInterval(() => {
+    const t = now();
+    for (const [code, sessionId] of pairCodes.entries()) {
+      const session = hostSessions.get(sessionId);
+      if (!session || t > session.pairCodeExpiresAt) {
+        pairCodes.delete(code);
+        if (session && session.pairCode === code) {
+          session.pairCode = null;
+          session.pairCodeExpiresAt = 0;
+        }
       }
     }
-  }
 
-  for (const [sessionId, session] of hostSessions.entries()) {
-    if (!session.socket && session.hostDisconnectedAt && (t - session.hostDisconnectedAt > SESSION_TTL_MS)) {
-      console.log(`[CLEANUP] Removing abandoned session ${sessionId}`);
-      for (const identity of session.remotes.values()) {
+    for (const [sessionId, session] of hostSessions.entries()) {
+      if (!session.socket && session.hostDisconnectedAt && (t - session.hostDisconnectedAt > SESSION_TTL_MS)) {
+        console.log(`[CLEANUP] Removing abandoned session ${sessionId}`);
+        for (const identity of session.remotes.values()) {
+          if (identity.socket && isOpen(identity.socket)) {
+            identity.socket.close();
+          }
+          if (identity.trustToken) {
+            remoteIdentities.delete(identity.trustToken);
+          }
+        }
+        hostSessions.delete(sessionId);
+        if (session.hostToken) {
+          hostTokenMap.delete(session.hostToken);
+        }
+      }
+    }
+
+    for (const [token, identity] of remoteIdentities.entries()) {
+      if (t > identity.expiresAt || identity.revoked) {
         if (identity.socket && isOpen(identity.socket)) {
           identity.socket.close();
         }
-        if (identity.trustToken) {
-          remoteIdentities.delete(identity.trustToken);
-        }
-      }
-      hostSessions.delete(sessionId);
-      if (session.hostToken) {
-        hostTokenMap.delete(session.hostToken);
+        remoteIdentities.delete(token);
       }
     }
-  }
 
-  for (const [token, identity] of remoteIdentities.entries()) {
-    if (t > identity.expiresAt || identity.revoked) {
-      if (identity.socket && isOpen(identity.socket)) {
-        identity.socket.close();
+    wss.clients.forEach((ws) => {
+      if (!ws.isAlive) {
+        cleanupSocket(ws);
+        return ws.terminate();
       }
-      remoteIdentities.delete(token);
-    }
-  }
+      ws.isAlive = false;
+      ws.ping();
+    });
+  }, CLEANUP_INTERVAL_MS);
+}
 
-  wss.clients.forEach((ws) => {
-    if (!ws.isAlive) {
-      cleanupSocket(ws);
-      return ws.terminate();
-    }
-    ws.isAlive = false;
-    ws.ping();
-  });
-}, CLEANUP_INTERVAL_MS);
+startCleanup();
 
 wss.on("connection", (ws) => {
   ws.isAlive = true;
@@ -141,6 +148,11 @@ function handleAuth(ws, msg) {
   const t = now();
 
   if (msg.type === PROTOCOL.SESSION.REGISTER_HOST) {
+    if (ws.role === PROTOCOL.ROLE.REMOTE) {
+      console.warn("Security: Remote attempted to register as Host. Terminating.");
+      ws.terminate();
+      return true;
+    }
     const existingHostToken = msg.hostToken;
     let session = null;
     let sessionId = null;
@@ -298,7 +310,7 @@ function attachRemoteSocket(ws, identity, trustToken) {
   const session = hostSessions.get(identity.sessionId);
   session.remotes.set(identity.id, identity);
 
-  if (isOpen(session.socket)) {
+  if (session.socket && isOpen(session.socket)) {
     session.socket.send(JSON.stringify({
       type: PROTOCOL.SESSION.REMOTE_JOINED,
       remoteId: identity.id,
@@ -380,4 +392,14 @@ function cleanupSocket(ws) {
 }
 
 app.get("/", (_, res) => res.send("Secure Server Running"));
-server.listen(3001, () => console.log("🚀 Secure server listening on :3001"));
+
+if (require.main === module) {
+  server.listen(3001, () => console.log("🚀 Secure server listening on :3001"));
+}
+
+module.exports = {
+  server,
+  app,
+  wss,
+  stopCleanup: () => clearInterval(cleanupInterval)
+};
