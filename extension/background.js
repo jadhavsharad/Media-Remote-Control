@@ -1,4 +1,4 @@
-import { TRIGGERS, MEDIA_URL_PATTERNS, CHANNELS, SESSION_EVENTS, MEDIA_EVENTS, CONTROL_EVENTS } from "./constants.js";
+import { MEDIA_URL_PATTERNS, CHANNELS, SESSION_EVENTS, MEDIA_EVENTS, CONTROL_EVENTS } from "./constants.js";
 
 let sessionIdentity = null;
 let connected = false;
@@ -22,7 +22,7 @@ function onDisconnected() {
   connected = false;
   setConnectedState(false);
   chrome.storage.local.set({ sessionIdentity: null, connected: false });
-
+  remoteContext.clear();
 }
 
 
@@ -59,13 +59,24 @@ chrome.runtime.onMessage.addListener((msg, _, sendResponse) => {
 });
 
 async function handleServerMessage(msg) {
+  console.log(msg)
   if (!msg?.type) return;
   if (msg.type === "WS_CLOSED") return;
+
   switch (msg.type) {
     case SESSION_EVENTS.HOST_REGISTERED: {
       onConnected(msg.SESSION_IDENTITY);
       break;
     }
+
+    case SESSION_EVENTS.PAIR_CODE: {
+      chrome.runtime.sendMessage({
+        type: "TO_POPUP",
+        payload: { type: "PAIR_CODE_RECEIVED", code: msg.code, ttl: msg.ttl }
+      }).catch(() => { });
+      break;
+    }
+
     case SESSION_EVENTS.REMOTE_JOINED: {
       remoteContext.set(msg.remoteId, { tabId: null });
       const tabs = await getMediaTabs()
@@ -98,12 +109,13 @@ async function handleServerMessage(msg) {
       });
       break;
     }
-    case SESSION_EVENTS.PAIR_INVALID: {
-      remoteContext.clear();
-      onDisconnected();
+    case SESSION_EVENTS.HOST_DISCONNECTED: {
       break;
     }
-
+    case SESSION_EVENTS.PAIR_INVALID: {
+      remoteContext.clear();
+      break;
+    }
   }
 }
 
@@ -112,12 +124,19 @@ function handlePopup(req, sendResponse) {
     chrome.storage.local.get(["sessionIdentity", "connected"], res => {
       sendResponse(res);
     });
+    return;
+  }
+
+  if (req.type === "POPUP_REQUEST_CODE") {
+    sendToServer({ type: SESSION_EVENTS.REQUEST_PAIR_CODE });
+    sendResponse({ ok: true });
+    return;
   }
 
   if (req.type === "POPUP_DISCONNECT") {
     onDisconnected();
-    sendToServer({ type: "LEAVE_PAIR" });
     sendResponse({ ok: true });
+    return;
   }
 }
 
@@ -125,6 +144,8 @@ async function sendToServer(payload) {
   chrome.runtime.sendMessage({
     type: CHANNELS.FROM_BACKGROUND,
     payload
+  }).catch(err => {
+     console.log(err)
   });
 }
 
@@ -137,4 +158,5 @@ async function ensureOffscreen() {
     justification: "Persistent WebSocket connection"
   });
 }
+
 ensureOffscreen();
