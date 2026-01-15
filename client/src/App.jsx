@@ -1,24 +1,22 @@
 import { useEffect, useRef, useState, useCallback } from "react";
-import { Html5QrcodeScanner } from "html5-qrcode";
+import GlowDot from "./components/GlowDot";
+import Html5QrcodePlugin from "./components/Html5QrcodePlugin";
+import { IoMdPlay, IoMdPause } from "react-icons/io";
+import { MSG, CONNECTION_STATUS, PLAYBACK_STATE } from "./constants/constants";
 
 const WS_URL = import.meta.env.VITE_WS_URL || "ws://localhost:3001";
 const RECONNECT_DELAY = 2000;
 
-const MSG = {
-  EXCHANGE_PAIR_CODE: "EXCHANGE_PAIR_CODE",
-  PAIR_SUCCESS: "PAIR_SUCCESS",
-  PAIR_FAILED: "PAIR_FAILED",
-  VALIDATE_SESSION: "VALIDATE_SESSION",
-  SESSION_VALID: "SESSION_VALID",
-  SESSION_INVALID: "SESSION_INVALID",
-  HOST_DISCONNECTED: "HOST_DISCONNECTED",
 
-  MEDIA_TABS_LIST: "MEDIA_TABS_LIST",
-  STATE_UPDATE: "STATE_UPDATE",
-  SELECT_ACTIVE_TAB: "SELECT_ACTIVE_TAB",
 
-  CONTROL_EVENT: "CONTROL_EVENT",
-  TOGGLE_PLAYBACK: "TOGGLE_PLAYBACK",
+const STATUS_COLORS = {
+  [CONNECTION_STATUS.PAIRED]: "bg-green-500 border-green-400",
+  [CONNECTION_STATUS.SCANNING]: "bg-blue-500 border-blue-500",
+  [CONNECTION_STATUS.CONNECTING]: "bg-yellow-500 border-yellow-400",
+  [CONNECTION_STATUS.CONNECTED]: "bg-zinc-50 border-zinc-50",
+  [CONNECTION_STATUS.VERIFYING]: "bg-orange-500 border-orange-400",
+  [CONNECTION_STATUS.DISCONNECTED]: "bg-red-500 border-red-400",
+  [CONNECTION_STATUS.WAITING]: "bg-zinc-50 border-zinc-50",
 };
 
 export default function App() {
@@ -26,22 +24,21 @@ export default function App() {
     localStorage.getItem("trust_token")
   );
 
-  // Status: Disconnected | Connecting | Verifying | Scanning | Paired | Waiting
-  const [status, setStatus] = useState("Disconnected");
+  const [status, setStatus] = useState(CONNECTION_STATUS.DISCONNECTED);
   const [mediaTabs, setMediaTabs] = useState([]);
   const [selectedTabId, setSelectedTabId] = useState(null);
-  const [playbackState, setPlaybackState] = useState("Play");
+  const [playbackState, setPlaybackState] = useState(PLAYBACK_STATE.PLAY);
 
   const wsRef = useRef(null);
   const reconnectTimeoutRef = useRef(null);
   const isMounted = useRef(true);
-  const scannerRef = useRef(null);
+  const handleMessageRef = useRef(null);
 
   const send = useCallback((msg) => {
-    if (wsRef.current && wsRef.current.readyState === WebSocket.OPEN) wsRef.current.send(JSON.stringify(msg));
+    if (wsRef.current?.readyState === WebSocket.OPEN) {
+      wsRef.current.send(JSON.stringify(msg));
+    }
   }, []);
-
-  const handleMessageRef = useRef(null);
 
   const handleMessage = (msg) => {
     if (!msg?.type) return;
@@ -50,26 +47,25 @@ export default function App() {
       case MSG.PAIR_SUCCESS:
         localStorage.setItem("trust_token", msg.trustToken);
         setTrustToken(msg.trustToken);
-        setStatus("Paired");
+        setStatus(CONNECTION_STATUS.PAIRED);
         break;
 
       case MSG.PAIR_FAILED:
-        alert("Pairing failed");
-        setStatus("Scanning");
+        setStatus(CONNECTION_STATUS.CONNECTED);
         break;
 
       case MSG.SESSION_VALID:
-        setStatus("Paired");
+        setStatus(CONNECTION_STATUS.PAIRED);
         break;
 
       case MSG.SESSION_INVALID:
         localStorage.removeItem("trust_token");
         setTrustToken(null);
-        setStatus("Scanning");
+        setStatus(CONNECTION_STATUS.CONNECTED);
         break;
 
       case MSG.HOST_DISCONNECTED:
-        setStatus("Waiting");
+        setStatus(CONNECTION_STATUS.WAITING);
         setMediaTabs([]);
         setSelectedTabId(null);
         break;
@@ -77,12 +73,12 @@ export default function App() {
       case MSG.MEDIA_TABS_LIST:
         if (Array.isArray(msg.tabs)) {
           setMediaTabs(msg.tabs);
-          if (selectedTabId && !msg.tabs.find((t) => t.tabId === selectedTabId)) setSelectedTabId(null);
+          if (selectedTabId && !msg.tabs.some((t) => t.tabId === selectedTabId)) { setSelectedTabId(null); }
         }
         break;
 
       case MSG.STATE_UPDATE:
-        setPlaybackState(msg.state === "PLAYING" ? "Pause" : "Play");
+        setPlaybackState(msg.state === "PLAYING" ? PLAYBACK_STATE.PAUSE : PLAYBACK_STATE.PLAY);
         break;
 
       default:
@@ -98,9 +94,12 @@ export default function App() {
     isMounted.current = true;
 
     const connect = () => {
-      if (wsRef.current && (wsRef.current.readyState === WebSocket.CONNECTING || wsRef.current.readyState === WebSocket.OPEN)) return;
+      if (wsRef.current && (wsRef.current.readyState === WebSocket.CONNECTING || wsRef.current.readyState === WebSocket.OPEN)) {
+        return;
+      }
 
-      setStatus((prev) => prev === "Scanning" ? "Scanning" : "Connecting");
+      setStatus(CONNECTION_STATUS.CONNECTING);
+
       const ws = new WebSocket(WS_URL);
       wsRef.current = ws;
 
@@ -109,30 +108,30 @@ export default function App() {
 
         const token = localStorage.getItem("trust_token");
         if (token) {
-          setStatus("Verifying");
+          setStatus(CONNECTION_STATUS.VERIFYING);
           ws.send(JSON.stringify({ type: MSG.VALIDATE_SESSION, trustToken: token }));
         } else {
-          setStatus("Scanning");
+          setStatus(CONNECTION_STATUS.CONNECTED);
         }
       };
 
       ws.onclose = () => {
         if (!isMounted.current) return;
 
-        setStatus(prev => prev === "Scanning" ? "Scanning" : "Disconnected");
+        setStatus(CONNECTION_STATUS.DISCONNECTED);
         setMediaTabs([]);
         setSelectedTabId(null);
         reconnectTimeoutRef.current = setTimeout(connect, RECONNECT_DELAY);
       };
 
-      ws.onerror = () => { ws.close(); };
+      ws.onerror = () => ws.close();
 
       ws.onmessage = (event) => {
         try {
           const msg = JSON.parse(event.data);
-          if (handleMessageRef.current) handleMessageRef.current(msg);
-        } catch (e) {
-          console.error("Invalid WS message", e);
+          handleMessageRef.current?.(msg);
+        } catch {
+          console.error("Invalid WS message");
         }
       };
     };
@@ -141,135 +140,120 @@ export default function App() {
 
     return () => {
       isMounted.current = false;
-      if (wsRef.current) wsRef.current.close();
-      if (reconnectTimeoutRef.current) clearTimeout(reconnectTimeoutRef.current);
+      wsRef.current?.close();
+      clearTimeout(reconnectTimeoutRef.current);
     };
   }, []);
 
   const onScanSuccess = useCallback((decodedText) => {
-    if (!decodedText) return;
+      if (!decodedText) return;
 
-    if (wsRef.current?.readyState === WebSocket.OPEN) {
-      send({ type: MSG.EXCHANGE_PAIR_CODE, code: decodedText, });
-      setStatus("Verifying");
-    }
-  }, [send]);
+      if (wsRef.current?.readyState === WebSocket.OPEN) {
+        send({ type: MSG.EXCHANGE_PAIR_CODE, code: decodedText, });
+        setStatus(CONNECTION_STATUS.VERIFYING);
+      }},
+    [send]
+  );
 
   const handleDisconnect = () => {
     localStorage.removeItem("trust_token");
     setTrustToken(null);
-    setStatus("Scanning");
+    setStatus(CONNECTION_STATUS.CONNECTED);
     setMediaTabs([]);
     setSelectedTabId(null);
   };
 
   const handleSelectTab = (tabId) => {
     setSelectedTabId(tabId);
-    send({ type: MSG.SELECT_ACTIVE_TAB, tabId, });
+    send({ type: MSG.SELECT_ACTIVE_TAB, tabId });
   };
 
   const handleTogglePlayback = () => {
     send({ type: MSG.CONTROL_EVENT, action: MSG.TOGGLE_PLAYBACK, });
   };
 
-  useEffect(() => {
-    if (status === "Scanning") {
-      const timer = setTimeout(() => {
-        if (!document.getElementById("reader")) return;
-
-        if (scannerRef.current) scannerRef.current.clear();
-
-        const scanner = new Html5QrcodeScanner("reader", { fps: 10, qrbox: { width: 250, height: 250 } }, false);
-        scanner.render(onScanSuccess, () => { });
-        scannerRef.current = scanner;
-      }, 100);
-
-      return () => {
-        clearTimeout(timer);
-        if (scannerRef.current) scannerRef.current.clear().catch(() => { });
-        scannerRef.current = null;
-      };
-    } else {
-      if (scannerRef.current) scannerRef.current.clear().catch(() => { });
-      scannerRef.current = null;
-    }
-  }, [status, onScanSuccess]);
-
   return (
-    <div className="bg-zinc-950 min-h-screen text-white flex items-center justify-center p-4">
-      <div className="w-full max-w-md bg-zinc-900 border border-zinc-800 rounded-3xl p-8 shadow-2xl flex flex-col gap-6">
+    <div className=" min-h-screen flex items-center justify-center text-white antialiased px-4">
+      <div className="w-full max-w-lg bg-zinc-950 p-4 border border-zinc-800">
+        <header className="gap-3 flex flex-row justify-between">
+          <h1 className="font-bold ">
+            Media Remote Control
+          </h1>
+          <div className="w-px min-h-full bg-zinc-700"></div>
+          <div className="flex items-center gap-2 text-sm">
 
-        {/* Header */}
-        <div className="flex justify-between items-center border-b border-zinc-800 pb-4">
-          <h1 className="text-xl font-bold">Remote Control</h1>
-          <span className="text-xs text-zinc-400 uppercase" data-testid="status-indicator">{status}</span>
-        </div>
 
-        {/* Scanning */}
-        {status === "Scanning" && (
-          <div className="flex flex-col gap-4" data-testid="scanner-container">
-            <div className="text-center text-sm text-zinc-400">
-              Scan QR code from extension
+            <GlowDot colorClass={STATUS_COLORS[status]} />
+            <span className="z-10">Socket Status : {status}</span>
+          </div>
+        </header>
+        <small className="text-zinc-400 text-right flex justify-end text-xs">
+          {status === CONNECTION_STATUS.CONNECTED && "Connected to server. Waiting to pair"}
+          {status === CONNECTION_STATUS.DISCONNECTED && "Disconnected with server."}
+          {status === CONNECTION_STATUS.PAIRED && "Successfully paired with device."}
+          {status === CONNECTION_STATUS.CONNECTING && "Connecting with server."}
+        </small>
+
+        <div className="w-full h-px bg-zinc-700 my-2"></div>
+
+        <div>
+          {status === CONNECTION_STATUS.CONNECTED && (
+            <div className="flex flex-col gap-4" data-testid="scanner-container">
+              <Html5QrcodePlugin
+                fps={10}
+                qrbox={250}
+                disableFlip={false}
+                qrCodeSuccessCallback={onScanSuccess}
+              />
             </div>
-            <div id="reader" className="rounded-xl overflow-hidden" />
-          </div>
-        )}
+          )}
 
-        {/* Connecting / Verifying */}
-        {(status === "Connecting" || status === "Verifying") && (
-          <div className="flex flex-col items-center gap-4 py-12" data-testid="loading-container">
-            <div className="animate-spin h-8 w-8 border-4 border-zinc-700 border-t-zinc-400 rounded-full" />
-            <div className="text-sm uppercase">{status}</div>
-          </div>
-        )}
+          {(status === CONNECTION_STATUS.CONNECTING || status === CONNECTION_STATUS.VERIFYING) && (
+            <div className="flex flex-col items-center gap-4 py-12" data-testid="loading-container">
+              <div className="animate-spin h-8 w-8 border-4 border-zinc-700 border-t-zinc-400 rounded-full" />
+              <div className="text-sm uppercase">{status}</div>
+            </div>
+          )}
 
-        {/* Paired */}
-        {status === "Paired" && (
-          <div className="flex flex-col gap-6" data-testid="paired-container">
-            <div className="flex justify-end">
-              <button
-                onClick={handleDisconnect}
-                className="text-xs text-red-400 bg-red-500/10 px-3 py-1 rounded-full"
-                data-testid="unpair-btn"
-              >
-                Unpair
+          {status === CONNECTION_STATUS.PAIRED && (
+            <div className="flex flex-col gap-6" data-testid="paired-container">
+              <div className="flex justify-between">
+                <p>
+                  <small className="text-zinc-400">Device information</small> <br />
+                  OS: Mac / Linux / Windows <br />
+                  Browser: Chrome / Firefox / Edge <br />
+                  Tabs open: 24
+                </p>
+                <button onClick={handleDisconnect} className="text-xs text-red-400 bg-red-500/10 px-4 py-2  cursor-pointer h-fit" data-testid="unpair-btn">  Unpair</button>
+              </div>
+
+              <div className="max-h-96 overflow-y-auto custom-scrollbar">
+                <div className="flex flex-col gap-2 w-full">
+                  {mediaTabs.map((tab) => (
+                    <button key={tab.tabId} onClick={() => handleSelectTab(tab.tabId)} className={`w-full text-left truncate cursor-pointer p-4 ${selectedTabId === tab.tabId ? "bg-white text-black" : "bg-zinc-800 text-zinc-400"}`}><small>{tab.title}</small></button>
+                  ))}
+                </div>
+              </div>
+
+              <button disabled={!selectedTabId} onClick={handleTogglePlayback} className="bg-zinc-900 text-white flex items-center justify-center gap-2 py-2 px-4 w-fit disabled:text-zinc-600" data-testid="play-pause-btn">
+                {playbackState === PLAYBACK_STATE.PLAY ? <><IoMdPlay /> Play</> : <><IoMdPause /> Pause</>}
               </button>
             </div>
+          )}
 
-            {/* Tabs */}
-            <div className="flex flex-col gap-2">
-              {mediaTabs.map((tab) => (
-                <button
-                  key={tab.tabId}
-                  onClick={() => handleSelectTab(tab.tabId)}
-                  className={`p-4 rounded-xl text-left ${selectedTabId === tab.tabId
-                    ? "bg-white text-black"
-                    : "bg-zinc-800 text-zinc-400"
-                    }`}
-                >
-                  {tab.title}
-                </button>
-              ))}
+          {status === CONNECTION_STATUS.WAITING && (
+            <div className="text-center text-zinc-400 text-sm py-8">
+              Waiting for host to reconnect…
             </div>
+          )}
 
-            {/* Playback */}
-            <button
-              disabled={!selectedTabId}
-              onClick={handleTogglePlayback}
-              className="h-14 rounded-xl bg-zinc-800 disabled:opacity-30"
-              data-testid="play-pause-btn"
-            >
-              {playbackState === "Play" ? "▶ Play" : "⏸ Pause"}
-            </button>
-          </div>
-        )}
+          {status === CONNECTION_STATUS.DISCONNECTED && (
+            <div className="text-center text-zinc-400 text-sm py-8">
+              Not connected with server.
+            </div>
+          )}
+        </div>
 
-        {/* Waiting */}
-        {status === "Waiting" && (
-          <div className="text-center text-zinc-400 text-sm py-8">
-            Waiting for host to reconnect…
-          </div>
-        )}
       </div>
     </div>
   );
