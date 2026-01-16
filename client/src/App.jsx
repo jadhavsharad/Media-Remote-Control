@@ -1,9 +1,10 @@
 import { useEffect, useRef, useState, useCallback } from "react";
-import GlowDot from "./components/GlowDot";
+import GlowDot from "./components/ui/glowDot";
 import Html5QrcodePlugin from "./components/Html5QrcodePlugin";
 import { IoMdPlay, IoMdPause } from "react-icons/io";
 import { MSG, CONNECTION_STATUS, PLAYBACK_STATE } from "./constants/constants";
 import { match, P } from "ts-pattern";
+import { toast } from "sonner"
 
 const WS_URL = import.meta.env.VITE_WS_URL || "ws://localhost:3001";
 const RECONNECT_DELAY = 2000;
@@ -50,6 +51,8 @@ export default function App() {
       })
       .with({ type: MSG.PAIR_FAILED }, () => {
         setStatus(CONNECTION_STATUS.CONNECTED);
+        alert("Pairing failed");
+        toast.error("Pairing failed");
       })
       .with({ type: MSG.SESSION_VALID }, () => {
         setStatus(CONNECTION_STATUS.PAIRED);

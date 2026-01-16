@@ -38,6 +38,14 @@ chrome.runtime.onMessage.addListener((msg) => {
   if (msg.type === "TO_POPUP" && msg.payload.type === "PAIR_CODE_RECEIVED") {
     renderQRCode(msg.payload.code);
   }
+
+  // Extension Reload Recovery - notify user of failed reinjections
+  if (msg.type === "TO_POPUP" && msg.payload.type === "REINJECTION_FAILED") {
+    const failedTabs = msg.payload.failedTabs;
+    if (failedTabs.length > 0) {
+      showReinjectionWarning(failedTabs.length);
+    }
+  }
 });
 
 pairBtn.addEventListener("click", () => {
@@ -73,4 +81,16 @@ function renderQRCode(code) {
   });
 
   pairBtn.style.display = "none";
+}
+
+// show warning for failed reinjections
+function showReinjectionWarning(count) {
+  const warningEl = document.createElement("div");
+  warningEl.style.cssText = "background: #fef3c7; color: #92400e; padding: 8px; margin: 8px 0; border-radius: 4px; font-size: 12px;";
+  warningEl.textContent = `⚠️ ${count} tab${count > 1 ? 's' : ''} need refresh. Please reload affected media tabs.`;
+
+  const container = document.querySelector("body");
+  if (container) {
+    container.insertBefore(warningEl, container.firstChild);
+  }
 }

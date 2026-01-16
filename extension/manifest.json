@@ -6,7 +6,8 @@
   "permissions": [
     "tabs",
     "storage",
-    "offscreen"
+    "offscreen",
+    "scripting"
   ],
   "host_permissions": [
     "*://*.youtube.com/*",

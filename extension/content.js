@@ -88,6 +88,16 @@ function startPolling() {
 }
 
 chrome.runtime.onMessage.addListener((msg) => {
+  // WebSocket Reconnect Rebind - handle reconnection
+  if (msg.type === "HOST_RECONNECTED") {
+    discoverVideo();
+    if (currentVideo) {
+      reportState(currentVideo);
+    }
+    return;
+  }
+
+  // Handle control events
   if (
     !msg ||
     msg.type !== "CONTROL_EVENT" ||

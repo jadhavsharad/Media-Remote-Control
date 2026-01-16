@@ -1,14 +1,16 @@
-import { TRIGGERS } from "./constants.js";
+import { TRIGGERS, CHANNELS } from "./constants.js";
 
 
 let socket = null;
 let reconnect = null;
+let userDisconnected = false; // Prevents auto-reconnect after user disconnect
 const WS_URL = "ws://localhost:3001";
 
 function connect() {
     socket = new WebSocket(WS_URL);
 
     socket.onopen = () => {
+        userDisconnected = false; // Clear flag on successful connection
         chrome.runtime.sendMessage({
             type: TRIGGERS.FROM_SERVER,
             payload: { type: "WS_OPEN" }
@@ -27,7 +29,11 @@ function connect() {
         chrome.runtime.sendMessage({ type: TRIGGERS.FROM_SERVER, payload: { type: "WS_CLOSED" } });
         socket = null;
         clearTimeout(reconnect);
-        reconnect = setTimeout(connect, 2000);
+
+        // Only auto-reconnect if not a user-initiated disconnect
+        if (!userDisconnected) {
+            reconnect = setTimeout(connect, 2000);
+        }
     };
 
     socket.onerror = (err) => {
@@ -40,6 +46,16 @@ function connect() {
 connect();
 
 chrome.runtime.onMessage.addListener((msg) => {
+    // Handle forced disconnect command
+    if (msg.type === CHANNELS.DISCONNECT_WS) {
+        userDisconnected = true;
+        if (socket && socket.readyState === WebSocket.OPEN) {
+            socket.close();
+        }
+        return;
+    }
+
+    // Handle normal server messages
     if (msg.type !== TRIGGERS.FROM_BACKGROUND) return;
     if (!isOpen()) return;
 

@@ -42,6 +42,71 @@ async function getMediaTabs() {
     }));
 }
 
+// validate tab exists
+async function validateTab(tabId) {
+  try {
+    await chrome.tabs.get(tabId);
+    return true;
+  } catch {
+    return false;
+  }
+}
+
+// reinject content scripts
+async function reinjectContentScripts() {
+  const mediaTabs = await getMediaTabs();
+  const failedTabs = [];
+
+  for (const tab of mediaTabs) {
+    try {
+      await chrome.scripting.executeScript({
+        target: { tabId: tab.tabId },
+        files: ["content.js"]
+      });
+    } catch (err) {
+      console.warn(`Failed to reinject into tab ${tab.tabId}:`, err);
+      failedTabs.push(tab);
+    }
+  }
+
+  // Notify popup if any tabs failed
+  if (failedTabs.length > 0) {
+    chrome.runtime.sendMessage({
+      type: "TO_POPUP",
+      payload: { type: "REINJECTION_FAILED", failedTabs }
+    }).catch(() => { });
+  }
+}
+
+// Extension Reload Recovery - listeners
+chrome.runtime.onStartup.addListener(() => {
+  reinjectContentScripts();
+});
+
+chrome.runtime.onInstalled.addListener(() => {
+  reinjectContentScripts();
+});
+
+// cleanup on tab removal
+chrome.tabs.onRemoved.addListener((tabId) => {
+  for (const [remoteId, ctx] of remoteContext.entries()) {
+    if (ctx.tabId === tabId) {
+      ctx.tabId = null;
+    }
+  }
+});
+
+// cleanup on navigation
+chrome.tabs.onUpdated.addListener((tabId, changeInfo) => {
+  if (changeInfo.status === "loading") {
+    for (const [remoteId, ctx] of remoteContext.entries()) {
+      if (ctx.tabId === tabId) {
+        ctx.tabId = null;
+      }
+    }
+  }
+});
+
 chrome.runtime.onMessage.addListener((msg, _, sendResponse) => {
   switch (msg.type) {
     case CHANNELS.FROM_SERVER:
@@ -69,6 +134,26 @@ async function handleServerMessage(msg) {
 
   switch (msg.type) {
     case "WS_OPEN": {
+      // WebSocket Reconnect Rebind - clear context and rediscover
+      remoteContext.clear();
+
+      // Rediscover and notify all content scripts of reconnection
+      getMediaTabs().then(tabs => {
+        tabs.forEach(tab => {
+          chrome.tabs.sendMessage(tab.tabId, {
+            type: SESSION_EVENTS.HOST_RECONNECTED
+          }).catch(async () => {
+            try {
+              await chrome.scripting.executeScript({
+                target: { tabId: tab.tabId },
+                files: ["content.js"]
+              });
+            } catch { }
+          });
+        });
+      });
+
+      // Reuse existing hostToken for reconnection
       chrome.storage.local.get(["hostToken"], (res) => {
         const hostToken = res.hostToken;
         sendToServer({
@@ -81,6 +166,12 @@ async function handleServerMessage(msg) {
 
     case SESSION_EVENTS.HOST_REGISTERED: {
       onConnected(msg.SESSION_IDENTITY, msg.hostToken);
+
+      // send tab list to all connected remotes after reconnect
+      sendToServer({
+        type: MEDIA_EVENTS.MEDIA_TABS_LIST,
+        tabs
+      });
       break;
     }
 
@@ -103,11 +194,12 @@ async function handleServerMessage(msg) {
       })
       break;
     }
+
     case MEDIA_EVENTS.SELECT_ACTIVE_TAB: {
       const ctx = remoteContext.get(msg.remoteId);
       if (!ctx) return;
 
-      const tab = await chrome.tabs.get(msg.tabId).catch(() => null);
+      const tab = await validateTab(msg.tabId);
       if (!tab) return;
 
       ctx.tabId = msg.tabId;
@@ -120,10 +212,23 @@ async function handleServerMessage(msg) {
       const ctx = remoteContext.get(msg.remoteId);
       if (!ctx?.tabId) return;
 
-      chrome.tabs.sendMessage(ctx.tabId, {
-        type: CONTROL_EVENTS.CONTROL_EVENT,
-        action: msg.action
-      });
+      // validate before sending
+      const isValid = await validateTab(ctx.tabId);
+      if (!isValid) {
+        console.warn(`Tab ${ctx.tabId} no longer exists, clearing context`);
+        ctx.tabId = null;
+        return;
+      }
+
+      try {
+        await chrome.tabs.sendMessage(ctx.tabId, {
+          type: CONTROL_EVENTS.CONTROL_EVENT,
+          action: msg.action
+        });
+      } catch (err) {
+        console.warn(`Failed to send message to tab ${ctx.tabId}:`, err);
+        ctx.tabId = null; // Clear stale reference
+      }
       break;
     }
     case SESSION_EVENTS.HOST_DISCONNECTED: {
@@ -153,6 +258,12 @@ function handlePopup(req, sendResponse) {
   }
 
   if (req.type === "POPUP_DISCONNECT") {
+    // Disconnect - notify server about force-close WS
+    sendToServer({ type: SESSION_EVENTS.HOST_DISCONNECT });
+
+    // Force-close WebSocket in offscreen
+    chrome.runtime.sendMessage({ type: CHANNELS.DISCONNECT_WS }).catch(() => { });
+
     onDisconnected();
     sendResponse({ ok: true });
     return;
