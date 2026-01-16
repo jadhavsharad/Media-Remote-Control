@@ -8,10 +8,10 @@ const app = express();
 const server = http.createServer(app);
 const wss = new WebSocket.Server({ server });
 
-const PAIR_CODE_TTL_MS = 60 * 1000;
-const TRUST_TOKEN_TTL_MS = 30 * 24 * 60 * 60 * 1000;
-const RATE_LIMIT_MS = 400;
-const CLEANUP_INTERVAL_MS = 30_000;
+const PAIR_CODE_TTL_MS = 60 * 1000; // 60 seconds
+const TRUST_TOKEN_TTL_MS = 30 * 24 * 60 * 60 * 1000; // 30 days
+const RATE_LIMIT_MS = 400; // 400ms between messages
+const CLEANUP_INTERVAL_MS = 30_000; // 30 seconds
 
 const hostSessions = new Map();
 const pairCodes = new Map();
@@ -386,8 +386,7 @@ function cleanupSocket(ws) {
       identity.socket = null;
     }
   } else if (ws.role === PROTOCOL.ROLE.REMOTE && !ws.trustToken) {
-    // Fallback if somehow trustToken is missing but this shouldn't happen with new logic
-    // Keeping this empty or basic logging is fine.
+    // Fallback if somehow trustToken is missing
   }
 }
 
