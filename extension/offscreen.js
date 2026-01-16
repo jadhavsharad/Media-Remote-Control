@@ -4,7 +4,7 @@ import { TRIGGERS, CHANNELS } from "./constants.js";
 let socket = null;
 let reconnect = null;
 let userDisconnected = false; // Prevents auto-reconnect after user disconnect
-const WS_URL = "ws://localhost:3001";
+const WS_URL = "ws://10.134.24.59:3000";
 
 function connect() {
     socket = new WebSocket(WS_URL);

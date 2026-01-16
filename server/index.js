@@ -101,8 +101,6 @@ function startCleanup() {
         cleanupSocket(ws);
         return ws.terminate();
       }
-      ws.isAlive = false;
-      ws.ping();
     });
   }, CLEANUP_INTERVAL_MS);
 }
@@ -114,10 +112,9 @@ wss.on("connection", (ws) => {
   ws.role = null;
   ws.sessionId = null;
   ws.remoteIdentityId = null;
-  ws.lastSeenAt = 0;
+  ws.lastSeenAt = Date.now();
   ws.trustToken = null;
 
-  ws.on("pong", () => (ws.isAlive = true));
 
   ws.on("message", (raw) => {
     let msg;

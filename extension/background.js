@@ -166,6 +166,7 @@ async function handleServerMessage(msg) {
 
     case SESSION_EVENTS.HOST_REGISTERED: {
       onConnected(msg.SESSION_IDENTITY, msg.hostToken);
+      const tabs = await getMediaTabs()
 
       // send tab list to all connected remotes after reconnect
       sendToServer({
