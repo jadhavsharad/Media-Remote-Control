@@ -256,7 +256,7 @@ async function handleServerMessage(msg) {
 
 
       try {
-       handleControlEvent(ctx, msg);
+        handleControlEvent(ctx, msg);
 
       } catch (err) {
         console.warn(`Failed to send message to tab ${ctx.tabId}:`, err);
@@ -297,7 +297,14 @@ function handlePopup(req, sendResponse) {
     // Force-close WebSocket in offscreen
     chrome.runtime.sendMessage({ type: CHANNELS.DISCONNECT_WS }).catch(() => { });
 
-    setConnectedState(false);
+    onDisconnected();
+    sendResponse({ ok: true });
+    return;
+  }
+
+  if (req.type === "POPUP_RECONNECT") {
+    // Force-connect WebSocket in offscreen
+    chrome.runtime.sendMessage({ type: CHANNELS.CONNECT_WS }).catch(() => { });
     sendResponse({ ok: true });
     return;
   }
@@ -364,14 +371,14 @@ async function handleControlEvent(ctx, msg) {
         const tab = await chrome.tabs.get(ctx.tabId);
 
         await chrome.tabs.update(ctx.tabId, {
-          muted: !tab.mutedInfo?.muted  
+          muted: !tab.mutedInfo?.muted
         });
       } catch (err) {
         console.warn(`Failed to mute tab ${ctx.tabId}`, err);
         ctx.tabId = null;
       }
-      finally{
-        sendToServer({type: CONTROL_EVENTS.STATE_UPDATE, muted: await chrome.tabs.get(ctx.tabId)})
+      finally {
+        sendToServer({ type: CONTROL_EVENTS.STATE_UPDATE, muted: await chrome.tabs.get(ctx.tabId) })
       }
       break;
     }

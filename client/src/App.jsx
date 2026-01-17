@@ -109,13 +109,6 @@ export default function App() {
 
   useEffect(() => {
     isMounted.current = true;
-    if (wsRef.current) {
-      wsRef.current.onclose = null;
-      wsRef.current.onerror = null;
-      wsRef.current.onmessage = null;
-      wsRef.current.onopen = null;
-      wsRef.current.close(1000, "reconnect");
-    }
 
     const connect = () => {
       if (wsRef.current && (wsRef.current.readyState === WebSocket.CONNECTING || wsRef.current.readyState === WebSocket.OPEN)) {

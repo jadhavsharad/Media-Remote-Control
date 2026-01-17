@@ -5,6 +5,7 @@ const CHANNELS = Object.freeze({
   FROM_CONTENT_SCRIPT: "FROM_CONTENT_SCRIPT",
   FROM_POPUP: "FROM_POPUP",
   DISCONNECT_WS: "DISCONNECT_WS", // Command to force-close WebSocket
+  CONNECT_WS: "CONNECT_WS", // Command to force-connect WebSocket
 });
 
 const SESSION_EVENTS = Object.freeze({

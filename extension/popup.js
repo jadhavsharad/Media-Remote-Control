@@ -2,6 +2,7 @@ const statusEl = document.getElementById("status");
 const sessionEl = document.getElementById("session");
 const disconnectBtn = document.getElementById("disconnect");
 const pairBtn = document.getElementById("pair-btn");
+const reconnectBtn = document.getElementById("reconnect");
 const pairContainer = document.getElementById("pair-container");
 const qrcodeEl = document.getElementById("qrcode");
 const codeTextEl = document.getElementById("code-text");
@@ -25,11 +26,13 @@ chrome.runtime.sendMessage({ type: "FROM_POPUP", popup: { type: "POPUP_GET_STATU
       disconnectBtn.classList.remove("inactive");
       pairBtn.disabled = false;
       pairBtn.classList.remove("inactive");
+      reconnectBtn.style.display = "none";
     } else {
       statusEl.textContent = "Status: Disconnected";
       sessionEl.textContent = "Session: —";
       pairBtn.disabled = true;
       pairBtn.classList.add("inactive");
+      reconnectBtn.style.display = "block";
     }
   }
 );
@@ -63,6 +66,17 @@ pairBtn.addEventListener("click", () => {
 disconnectBtn.addEventListener("click", () => {
   chrome.runtime.sendMessage({ type: "FROM_POPUP", popup: { type: "POPUP_DISCONNECT" } }, () => {
     window.close();
+  });
+});
+
+reconnectBtn.addEventListener("click", () => {
+  reconnectBtn.disabled = true;
+  reconnectBtn.textContent = "Connecting...";
+
+  chrome.runtime.sendMessage({ type: "FROM_POPUP", popup: { type: "POPUP_RECONNECT" } }, () => {
+    setTimeout(() => {
+      window.close();
+    }, 1000);
   });
 });
 
