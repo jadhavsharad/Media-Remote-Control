@@ -19,20 +19,17 @@ const STATUS_COLORS = {
   [CONNECTION_STATUS.WAITING]: "bg-zinc-50 border-zinc-50",
 };
 
+
+function log(log) {
+  console.log(log)
+}
+
+
 export default function App() {
   const [, setTrustToken] = useState(() =>
     localStorage.getItem("trust_token")
   );
 
-  const [status, setStatus] = useState(CONNECTION_STATUS.DISCONNECTED);
-  const [mediaTabs, setMediaTabs] = useState([]);
-  const [selectedTabId, setSelectedTabId] = useState(null);
-  const [playbackState, setPlaybackState] = useState(PLAYBACK_STATE.PLAY);
-
-  const wsRef = useRef(null);
-  const reconnectTimeoutRef = useRef(null);
-  const isMounted = useRef(true);
-  const handleMessageRef = useRef(null);
 
   const send = useCallback((msg) => {
     if (wsRef.current?.readyState === WebSocket.OPEN) {
@@ -40,39 +37,66 @@ export default function App() {
     }
   }, []);
 
+  const [status, setStatus] = useState(CONNECTION_STATUS.DISCONNECTED);
+  const [mediaTabs, setMediaTabs] = useState([]);
+  const [selectedTabId, setSelectedTabId] = useState(null);
+  const [playbackState, setPlaybackState] = useState(PLAYBACK_STATE.PLAY);
+  const [hostInfo, setHostInfo] = useState(null);
+
+  const wsRef = useRef(null);
+  const reconnectTimeoutRef = useRef(null);
+  const isMounted = useRef(true);
+  const handleMessageRef = useRef(null);
+
   const handleMessage = (msg) => {
     if (!msg?.type) return;
+
+    log(msg)
 
     match(msg)
       .with({ type: MSG.PAIR_SUCCESS }, (m) => {
         localStorage.setItem("trust_token", m.trustToken);
         setTrustToken(m.trustToken);
         setStatus(CONNECTION_STATUS.PAIRED);
+        setHostInfo(msg.hostInfo);
       })
       .with({ type: MSG.PAIR_FAILED }, () => {
         setStatus(CONNECTION_STATUS.CONNECTED);
+        setMediaTabs([]);
+        setSelectedTabId(null);
+        setHostInfo(null);
         alert("Pairing failed");
         toast.error("Pairing failed");
       })
       .with({ type: MSG.SESSION_VALID }, () => {
         setStatus(CONNECTION_STATUS.PAIRED);
+        setHostInfo(msg.hostInfo);
+        // send({ type: MSG.GET_MEDIA_TABS }); TODO: IMPLEMENT GET MEDIA TABS
       })
       .with({ type: MSG.SESSION_INVALID }, () => {
         localStorage.removeItem("trust_token");
         setTrustToken(null);
         setStatus(CONNECTION_STATUS.CONNECTED);
+        setMediaTabs([]);
+        setSelectedTabId(null);
+        setHostInfo(null);
       })
       .with({ type: MSG.HOST_DISCONNECTED }, () => {
         setStatus(CONNECTION_STATUS.WAITING);
-        setMediaTabs([]);
-        setSelectedTabId(null);
       })
       .with({ type: MSG.MEDIA_TABS_LIST, tabs: P.array() }, (m) => {
         setMediaTabs(m.tabs);
-        if (selectedTabId && !m.tabs.some((t) => t.tabId === selectedTabId)) {
-          setSelectedTabId(null);
-        }
+
+        setSelectedTabId(prev => {
+          if (!prev) return null;
+          const stillExists = m.tabs.some(t => t.tabId === prev);
+          if (!stillExists) return null;
+          send({ type: MSG.SELECT_ACTIVE_TAB, tabId: prev });
+          return prev;
+        });
+        setStatus(s => s === CONNECTION_STATUS.WAITING ? CONNECTION_STATUS.PAIRED : s);
       })
+
       .with({ type: MSG.STATE_UPDATE }, (m) => {
         setPlaybackState(m.state === "PLAYING" ? PLAYBACK_STATE.PAUSE : PLAYBACK_STATE.PLAY);
       })
@@ -85,6 +109,13 @@ export default function App() {
 
   useEffect(() => {
     isMounted.current = true;
+    if (wsRef.current) {
+      wsRef.current.onclose = null;
+      wsRef.current.onerror = null;
+      wsRef.current.onmessage = null;
+      wsRef.current.onopen = null;
+      wsRef.current.close(1000, "reconnect");
+    }
 
     const connect = () => {
       if (wsRef.current && (wsRef.current.readyState === WebSocket.CONNECTING || wsRef.current.readyState === WebSocket.OPEN)) {
@@ -94,7 +125,6 @@ export default function App() {
       setStatus(CONNECTION_STATUS.CONNECTING);
 
       const ws = new WebSocket(WS_URL);
-      wsRef.current = ws;
 
       ws.onopen = () => {
         if (!isMounted.current) return;
@@ -102,7 +132,7 @@ export default function App() {
         const token = localStorage.getItem("trust_token");
         if (token) {
           setStatus(CONNECTION_STATUS.VERIFYING);
-          ws.send(JSON.stringify({ type: MSG.VALIDATE_SESSION, trustToken: token }));
+          send({ type: MSG.VALIDATE_SESSION, trustToken: token });
         } else {
           setStatus(CONNECTION_STATUS.CONNECTED);
         }
@@ -110,14 +140,13 @@ export default function App() {
 
       ws.onclose = () => {
         if (!isMounted.current) return;
-
         setStatus(CONNECTION_STATUS.DISCONNECTED);
-        setMediaTabs([]);
-        setSelectedTabId(null);
         reconnectTimeoutRef.current = setTimeout(connect, RECONNECT_DELAY);
       };
 
-      ws.onerror = () => ws.close();
+      ws.onerror = (e) => {
+        log("onerror", e);
+      };
 
       ws.onmessage = (event) => {
         try {
@@ -127,6 +156,7 @@ export default function App() {
           console.error("Invalid WS message");
         }
       };
+      wsRef.current = ws;
     };
 
     connect();
@@ -210,11 +240,11 @@ export default function App() {
               <div className="flex flex-col gap-6" data-testid="paired-container">
                 <div className="flex justify-between">
                   <p>
-                    <small className="text-zinc-400">Device information</small>{" "}
+                    <small className="text-zinc-400">Connection information</small>{" "}
                     <br />
-                    OS: Mac / Linux / Windows <br />
-                    Browser: Chrome / Firefox / Edge <br />
-                    Tabs open: 24
+                    OS: {hostInfo?.os} <br />
+                    Browser: {hostInfo?.browser} <br />
+                    Media Tabs open: {(mediaTabs.length < 10) ? `0${mediaTabs.length}` : mediaTabs.length}
                   </p>
                   <button onClick={handleDisconnect} className="text-xs text-red-400 bg-red-500/10 px-4 py-2  cursor-pointer h-fit" data-testid="unpair-btn">{" "} Unpair</button>
                 </div>
@@ -227,7 +257,7 @@ export default function App() {
                   </div>
                 </div>
 
-                <button disabled={!selectedTabId} onClick={handleTogglePlayback} className="bg-zinc-900 text-white flex items-center justify-center gap-2 py-2 px-4 w-fit disabled:text-zinc-600" data-testid="play-pause-btn">
+                <button disabled={!selectedTabId} onClick={handleTogglePlayback} className="cursor-pointer bg-zinc-900 text-white flex items-center justify-center gap-2 py-2 px-4 w-fit disabled:text-zinc-600" data-testid="play-pause-btn">
                   {playbackState === PLAYBACK_STATE.PLAY ? <><IoMdPlay /> Play</> : <><IoMdPause /> Pause</>}
                 </button>
               </div>
