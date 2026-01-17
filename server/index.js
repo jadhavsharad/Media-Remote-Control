@@ -144,7 +144,6 @@ function isRateLimited(ws) {
 
 function handleAuth(ws, msg) {
   const t = now();
-
   if (msg.type === PROTOCOL.SESSION.REGISTER_HOST) {
     if (ws.role === PROTOCOL.ROLE.REMOTE) {
       console.warn("Security: Remote attempted to register as Host. Terminating.");
@@ -152,6 +151,8 @@ function handleAuth(ws, msg) {
       return true;
     }
     const existingHostToken = msg.hostToken;
+    const hostOS = msg.info?.os;
+    const hostBrowser = msg.info?.browser;
     let session = null;
     let sessionId = null;
     let hostToken = null;
@@ -184,7 +185,9 @@ function handleAuth(ws, msg) {
 
       session = {
         socket: ws,
-        hostToken,
+        hostOS: hostOS,
+        hostBrowser: hostBrowser,
+        hostToken: hostToken,
         remotes: new Map(),
         pairCode: null,
         pairCodeExpiresAt: 0,
@@ -261,6 +264,10 @@ function handleAuth(ws, msg) {
       type: PROTOCOL.SESSION.PAIR_SUCCESS,
       trustToken,
       sessionId,
+      hostInfo: {
+        os: session.hostOS,
+        browser: session.hostBrowser
+      }
     }));
 
     return true;
@@ -275,6 +282,8 @@ function handleAuth(ws, msg) {
       return true;
     }
 
+    const session = hostSessions.get(identity.sessionId);
+
     if (!hostSessions.has(identity.sessionId)) {
       ws.send(JSON.stringify({ type: PROTOCOL.SESSION.SESSION_INVALID }));
       return true;
@@ -285,6 +294,10 @@ function handleAuth(ws, msg) {
     ws.send(JSON.stringify({
       type: PROTOCOL.SESSION.SESSION_VALID,
       sessionId: identity.sessionId,
+      hostInfo: {
+        os: session?.hostOS,
+        browser: session?.hostBrowser
+      }
     }));
 
     return true;
