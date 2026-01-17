@@ -1,7 +1,7 @@
 import { useEffect, useRef, useState, useCallback } from "react";
 import GlowDot from "./components/ui/glowDot";
 import Html5QrcodePlugin from "./components/Html5QrcodePlugin";
-import { IoMdPlay, IoMdPause } from "react-icons/io";
+import { IoMdPlay, IoMdPause, IoMdVolumeOff, IoMdVolumeHigh } from "react-icons/io";
 import { MSG, CONNECTION_STATUS, PLAYBACK_STATE } from "./constants/constants";
 import { match, P } from "ts-pattern";
 import { toast } from "sonner"
@@ -39,6 +39,7 @@ export default function App() {
 
   const [status, setStatus] = useState(CONNECTION_STATUS.DISCONNECTED);
   const [mediaTabs, setMediaTabs] = useState([]);
+  const [muteState, setMuteState] = useState(false);
   const [selectedTabId, setSelectedTabId] = useState(null);
   const [playbackState, setPlaybackState] = useState(PLAYBACK_STATE.PLAY);
   const [hostInfo, setHostInfo] = useState(null);
@@ -50,8 +51,6 @@ export default function App() {
 
   const handleMessage = (msg) => {
     if (!msg?.type) return;
-
-    log(msg)
 
     match(msg)
       .with({ type: MSG.PAIR_SUCCESS }, (m) => {
@@ -98,6 +97,7 @@ export default function App() {
       })
 
       .with({ type: MSG.STATE_UPDATE }, (m) => {
+        if (m.muted) { setMuteState(m.muted.mutedInfo?.muted); return }
         setPlaybackState(m.state === "PLAYING" ? PLAYBACK_STATE.PAUSE : PLAYBACK_STATE.PLAY);
       })
       .otherwise(() => { });
@@ -196,6 +196,10 @@ export default function App() {
     send({ type: MSG.CONTROL_EVENT, action: MSG.TOGGLE_PLAYBACK });
   };
 
+  const handleToggleMute = () => {
+    send({ type: MSG.CONTROL_EVENT, action: MSG.MUTE_TAB })
+  }
+
   return (
     <div className=" min-h-screen flex items-center justify-center text-white antialiased px-4">
       <div className="w-full max-w-lg bg-zinc-950 p-4 border border-zinc-800">
@@ -257,9 +261,14 @@ export default function App() {
                   </div>
                 </div>
 
-                <button disabled={!selectedTabId} onClick={handleTogglePlayback} className="cursor-pointer bg-zinc-900 text-white flex items-center justify-center gap-2 py-2 px-4 w-fit disabled:text-zinc-600" data-testid="play-pause-btn">
-                  {playbackState === PLAYBACK_STATE.PLAY ? <><IoMdPlay /> Play</> : <><IoMdPause /> Pause</>}
-                </button>
+                <div className="flex gap-4">
+                  <button disabled={!selectedTabId} onClick={handleTogglePlayback} className="cursor-pointer bg-zinc-900 text-white flex items-center justify-center gap-2 py-2 px-4 w-fit disabled:text-zinc-600" data-testid="play-pause-btn">
+                    {playbackState === PLAYBACK_STATE.PLAY ? <><IoMdPlay /> Play</> : <><IoMdPause /> Pause</>}
+                  </button>
+                  <button disabled={!selectedTabId} onClick={handleToggleMute} className="cursor-pointer bg-zinc-900 text-white flex items-center justify-center gap-2 py-2 px-4 w-fit disabled:text-zinc-600" data-testid="mute-btn">
+                    {muteState ? <IoMdVolumeOff /> : <IoMdVolumeHigh /> } Mute
+                  </button>
+                </div>
               </div>
             ))
             .with(CONNECTION_STATUS.WAITING, () => (

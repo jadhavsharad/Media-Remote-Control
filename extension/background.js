@@ -31,7 +31,7 @@ function onDisconnected() {
 
 
 function isValidControlAction(action) {
-  return action === "TOGGLE_PLAYBACK";
+  return action === "TOGGLE_PLAYBACK" || action === "MUTE_TAB";
 }
 
 async function getMediaTabs() {
@@ -42,7 +42,8 @@ async function getMediaTabs() {
       tabId: tab.id,
       title: tab.title,
       url: tab.url,
-      favIconUrl: tab.favIconUrl || null
+      favIconUrl: tab.favIconUrl || null,
+      muted: tab.mutedInfo?.muted || false
     }));
 }
 
@@ -253,11 +254,10 @@ async function handleServerMessage(msg) {
         return;
       }
 
+
       try {
-        await chrome.tabs.sendMessage(ctx.tabId, {
-          type: CONTROL_EVENTS.CONTROL_EVENT,
-          action: msg.action
-        });
+       handleControlEvent(ctx, msg);
+
       } catch (err) {
         console.warn(`Failed to send message to tab ${ctx.tabId}:`, err);
         ctx.tabId = null; // Clear stale reference
@@ -355,5 +355,34 @@ function getOS() {
   });
 }
 
+async function handleControlEvent(ctx, msg) {
+  if (!ctx.tabId) return;
+
+  switch (msg.action) {
+    case CONTROL_EVENTS.MUTE_TAB: {
+      try {
+        const tab = await chrome.tabs.get(ctx.tabId);
+
+        await chrome.tabs.update(ctx.tabId, {
+          muted: !tab.mutedInfo?.muted  
+        });
+      } catch (err) {
+        console.warn(`Failed to mute tab ${ctx.tabId}`, err);
+        ctx.tabId = null;
+      }
+      finally{
+        sendToServer({type: CONTROL_EVENTS.STATE_UPDATE, muted: await chrome.tabs.get(ctx.tabId)})
+      }
+      break;
+    }
+
+    default:
+      // forward other actions to content script
+      await chrome.tabs.sendMessage(ctx.tabId, {
+        type: CONTROL_EVENTS.CONTROL_EVENT,
+        action: msg.action
+      });
+  }
+}
 
 ensureOffscreen();

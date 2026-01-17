@@ -31,6 +31,7 @@ const SESSION_EVENTS = Object.freeze({
 const CONTROL_EVENTS = Object.freeze({
   CONTROL_EVENT: "CONTROL_EVENT",
   STATE_UPDATE: "STATE_UPDATE",
+  MUTE_TAB: "MUTE_TAB",
 });
 
 const CONTROL_ACTIONS = Object.freeze({
