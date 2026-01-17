@@ -1,11 +1,12 @@
 export const CONNECTION_STATUS = Object.freeze({
   DISCONNECTED: "Disconnected",
   CONNECTING: "Connecting",
-  CONNECTED:"Connected",
+  CONNECTED: "Connected",
   VERIFYING: "Verifying",
   SCANNING: "Scanning",
   PAIRED: "Paired",
   WAITING: "Waiting",
+  BLOCKED: "Blocked",
 });
 
 export const PLAYBACK_STATE = Object.freeze({
@@ -26,4 +27,5 @@ export const MSG = Object.freeze({
   SELECT_ACTIVE_TAB: "SELECT_ACTIVE_TAB",
   CONTROL_EVENT: "CONTROL_EVENT",
   TOGGLE_PLAYBACK: "TOGGLE_PLAYBACK",
+  MUTE_TAB: "MUTE_TAB",
 });

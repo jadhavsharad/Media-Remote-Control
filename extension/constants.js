@@ -5,6 +5,7 @@ const CHANNELS = Object.freeze({
   FROM_CONTENT_SCRIPT: "FROM_CONTENT_SCRIPT",
   FROM_POPUP: "FROM_POPUP",
   DISCONNECT_WS: "DISCONNECT_WS", // Command to force-close WebSocket
+  CONNECT_WS: "CONNECT_WS", // Command to force-connect WebSocket
 });
 
 const SESSION_EVENTS = Object.freeze({
@@ -31,6 +32,7 @@ const SESSION_EVENTS = Object.freeze({
 const CONTROL_EVENTS = Object.freeze({
   CONTROL_EVENT: "CONTROL_EVENT",
   STATE_UPDATE: "STATE_UPDATE",
+  MUTE_TAB: "MUTE_TAB",
 });
 
 const CONTROL_ACTIONS = Object.freeze({

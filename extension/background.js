@@ -5,6 +5,10 @@ let connected = false;
 const remoteContext = new Map();
 const offscreenPath = 'offscreen.html';
 
+function log(log) {
+  console.log(log)
+}
+
 function setConnectedState(state) {
   connected = state;
   chrome.action.setBadgeText({ text: state ? "ON" : "" });
@@ -27,7 +31,7 @@ function onDisconnected() {
 
 
 function isValidControlAction(action) {
-  return action === "TOGGLE_PLAYBACK";
+  return action === "TOGGLE_PLAYBACK" || action === "MUTE_TAB";
 }
 
 async function getMediaTabs() {
@@ -38,7 +42,8 @@ async function getMediaTabs() {
       tabId: tab.id,
       title: tab.title,
       url: tab.url,
-      favIconUrl: tab.favIconUrl || null
+      favIconUrl: tab.favIconUrl || null,
+      muted: tab.mutedInfo?.muted || false
     }));
 }
 
@@ -78,6 +83,35 @@ async function reinjectContentScripts() {
   }
 }
 
+
+function DebouncedScheduler(fn, delay = 300) {
+  let timer = null;
+
+  return () => {
+    if (timer) return;
+
+    timer = setTimeout(async () => {
+      timer = null;
+      try {
+        await fn();
+      } catch (e) {
+        console.warn("Scheduled task failed", e);
+      }
+    }, delay);
+  };
+}
+
+async function sendMediaTabsList(extra = {}) {
+  const tabs = await getMediaTabs();
+  sendToServer({
+    type: MEDIA_EVENTS.MEDIA_TABS_LIST,
+    tabs,
+    ...extra,
+  });
+}
+
+const refreshMediaTabs = DebouncedScheduler(() => sendMediaTabsList());
+
 // Extension Reload Recovery - listeners
 chrome.runtime.onStartup.addListener(() => {
   reinjectContentScripts();
@@ -94,18 +128,21 @@ chrome.tabs.onRemoved.addListener((tabId) => {
       ctx.tabId = null;
     }
   }
+  refreshMediaTabs()
 });
 
 // cleanup on navigation
 chrome.tabs.onUpdated.addListener((tabId, changeInfo) => {
-  if (changeInfo.status === "loading") {
-    for (const [remoteId, ctx] of remoteContext.entries()) {
-      if (ctx.tabId === tabId) {
-        ctx.tabId = null;
-      }
+  for (const ctx of remoteContext.values()) {
+    if (ctx.tabId === tabId) {
+      ctx.tabId = null;
     }
   }
+
+  refreshMediaTabs()
 });
+
+chrome.tabs.onCreated.addListener(refreshMediaTabs);
 
 chrome.runtime.onMessage.addListener((msg, _, sendResponse) => {
   switch (msg.type) {
@@ -134,8 +171,6 @@ async function handleServerMessage(msg) {
 
   switch (msg.type) {
     case "WS_OPEN": {
-      // WebSocket Reconnect Rebind - clear context and rediscover
-      remoteContext.clear();
 
       // Rediscover and notify all content scripts of reconnection
       getMediaTabs().then(tabs => {
@@ -148,17 +183,26 @@ async function handleServerMessage(msg) {
                 target: { tabId: tab.tabId },
                 files: ["content.js"]
               });
-            } catch { }
+            } catch {
+              log("Failed to reinject into tab " + tab.tabId)
+            }
           });
         });
       });
+
+      const os = await getOS();
+      const browser = getBrowser();
 
       // Reuse existing hostToken for reconnection
       chrome.storage.local.get(["hostToken"], (res) => {
         const hostToken = res.hostToken;
         sendToServer({
           type: SESSION_EVENTS.REGISTER_HOST,
-          hostToken: hostToken
+          hostToken: hostToken,
+          info: {
+            os,
+            browser
+          }
         });
       });
       break;
@@ -166,12 +210,7 @@ async function handleServerMessage(msg) {
 
     case SESSION_EVENTS.HOST_REGISTERED: {
       onConnected(msg.SESSION_IDENTITY, msg.hostToken);
-
-      // send tab list to all connected remotes after reconnect
-      sendToServer({
-        type: MEDIA_EVENTS.MEDIA_TABS_LIST,
-        tabs
-      });
+      sendMediaTabsList();
       break;
     }
 
@@ -186,12 +225,7 @@ async function handleServerMessage(msg) {
     case SESSION_EVENTS.REMOTE_JOINED: {
       remoteContext.delete(msg.remoteId);
       remoteContext.set(msg.remoteId, { tabId: null });
-      const tabs = await getMediaTabs()
-      sendToServer({
-        type: MEDIA_EVENTS.MEDIA_TABS_LIST,
-        remoteId: msg.remoteId,
-        tabs
-      })
+      sendMediaTabsList({ remoteId: msg.remoteId });
       break;
     }
 
@@ -220,11 +254,10 @@ async function handleServerMessage(msg) {
         return;
       }
 
+
       try {
-        await chrome.tabs.sendMessage(ctx.tabId, {
-          type: CONTROL_EVENTS.CONTROL_EVENT,
-          action: msg.action
-        });
+        handleControlEvent(ctx, msg);
+
       } catch (err) {
         console.warn(`Failed to send message to tab ${ctx.tabId}:`, err);
         ctx.tabId = null; // Clear stale reference
@@ -268,6 +301,13 @@ function handlePopup(req, sendResponse) {
     sendResponse({ ok: true });
     return;
   }
+
+  if (req.type === "POPUP_RECONNECT") {
+    // Force-connect WebSocket in offscreen
+    chrome.runtime.sendMessage({ type: CHANNELS.CONNECT_WS }).catch(() => { });
+    sendResponse({ ok: true });
+    return;
+  }
 }
 
 async function sendToServer(payload) {
@@ -294,5 +334,62 @@ function resetSession(reason = "unknown") {
   remoteContext.clear();
 }
 
+function getBrowser() {
+  if (navigator.userAgentData?.brands) {
+    const brands = navigator.userAgentData.brands.map(b => b.brand);
+    if (brands.includes("Microsoft Edge")) return "Edge";
+    if (brands.includes("Brave")) return "Brave";
+    if (brands.includes("Google Chrome")) return "Chrome";
+    if (brands.includes("Chromium")) return "Chromium";
+  }
+  return "Unknown";
+}
+
+function getOS() {
+  return new Promise((resolve) => {
+    chrome.runtime.getPlatformInfo((info) => {
+      resolve(
+        {
+          mac: "macOS",
+          win: "Windows",
+          linux: "Linux",
+          cros: "ChromeOS",
+          android: "Android",
+          openbsd: "OpenBSD",
+        }[info.os] ?? "Unknown"
+      );
+    });
+  });
+}
+
+async function handleControlEvent(ctx, msg) {
+  if (!ctx.tabId) return;
+
+  switch (msg.action) {
+    case CONTROL_EVENTS.MUTE_TAB: {
+      try {
+        const tab = await chrome.tabs.get(ctx.tabId);
+
+        await chrome.tabs.update(ctx.tabId, {
+          muted: !tab.mutedInfo?.muted
+        });
+      } catch (err) {
+        console.warn(`Failed to mute tab ${ctx.tabId}`, err);
+        ctx.tabId = null;
+      }
+      finally {
+        sendToServer({ type: CONTROL_EVENTS.STATE_UPDATE, muted: await chrome.tabs.get(ctx.tabId) })
+      }
+      break;
+    }
+
+    default:
+      // forward other actions to content script
+      await chrome.tabs.sendMessage(ctx.tabId, {
+        type: CONTROL_EVENTS.CONTROL_EVENT,
+        action: msg.action
+      });
+  }
+}
 
 ensureOffscreen();
