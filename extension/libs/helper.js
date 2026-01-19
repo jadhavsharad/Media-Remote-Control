@@ -2,10 +2,6 @@ import { isMediaUrl } from "@/utils/utils";
 import { CHANNELS, CONTROL_EVENTS, MESSAGE_TYPES } from "./constants";
 import { warn } from "@/utils/log";
 
-/** * @typedef {import('./constants').Channel} Channel
- * @typedef {import('./constants').MessagePayload} MessagePayload 
- */
-
 let connected = false;
 let sessionIdentity = null;
 let hostToken = null;
@@ -130,7 +126,7 @@ export async function injectContentScript() {
 
     if (failedTabs.length > 0) {
         sendMessage(CHANNELS.TO_POPUP, {
-            type: MESSAGE_TYPES.SCRIPT_INJECTION_FAIL,
+            action: MESSAGE_TYPES.SCRIPT_INJECTION_FAIL,
             failedTabs,
         });
     }
@@ -143,7 +139,7 @@ export async function injectContentScript() {
  */
 export async function sendMessage(channel, payload) {
     try {
-        await chrome.runtime.sendMessage({ type: channel, payload });
+        await chrome.runtime.sendMessage({ action: channel, payload });
     } catch {
         // receiver might be gone
     }
@@ -157,7 +153,7 @@ export function receiveMessage(channel, handler) {
 }
 
 // Offscreen document
-async function ensureOffscreen() {
+export async function startOffscreen() {
     if (await chrome.offscreen.hasDocument()) return;
 
     await chrome.offscreen.createDocument({
@@ -168,7 +164,7 @@ async function ensureOffscreen() {
 }
 
 export async function sendToServer(payload) {
-    await ensureOffscreen();
+    await startOffscreen();
     await sendMessage(CHANNELS.TO_OFFSCREEN, payload);
 }
 
@@ -187,7 +183,7 @@ export const CONTROL_HANDLERS = {
         const tab = await getTab(ctx);
         const muted = !tab.mutedInfo?.muted;
         await chrome.tabs.update(ctx.tabId, { muted });
-        sendToServer({ type: CONTROL_EVENTS.STATE_UPDATE, muted });
+        sendToServer({ action: CONTROL_EVENTS.STATE_UPDATE, muted });
     },
 };
 
@@ -205,4 +201,19 @@ export async function handleControlEvent(ctx, payload) {
         console.warn("Control event failed:", payload.type, err);
         ctx.tabId = null;
     }
+}
+
+export async function sendMediaList(extra = {}) {
+    const tabs = await getMediaList();
+    const payload = { action: MESSAGE_TYPES.MEDIA_LIST, tabs, ...extra }
+    await sendMessage(CHANNELS.TO_SERVER, payload)
+}
+
+export const  refreshMediaList = debouncedScheduler(() => sendMediaList());
+
+
+export async function sendToContentScript(ctx, payload) {
+    if (!ctx.tabId) return;
+
+    await chrome.tabs.sendMessage(ctx.tabId, payload);
 }

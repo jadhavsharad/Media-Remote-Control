@@ -1,4 +1,4 @@
-import { BASE_DOMAINS, MESSAGE_TYPES } from "@/utils/constants";
+import { BASE_DOMAINS, MESSAGE_TYPES } from "../libs/constants";
 
 // Type guards / validators
 export function isValidMessageType(action) {
@@ -17,6 +17,8 @@ export function isMediaUrl(url) {
     }
 }
 
+
+
 // Browser Detection
 export function getBrowser() {
     const brands = navigator.userAgentData?.brands?.map(b => b.brand) ?? [];
@@ -25,6 +27,23 @@ export function getBrowser() {
     if (brands.includes("Google Chrome")) return "Chrome";
     if (brands.includes("Chromium")) return "Chromium";
     return "Unknown";
+}
+
+// OS Detection
+export function getOS() {
+    return new Promise((resolve) => {
+        chrome.runtime.getPlatformInfo((info) => {
+            const osMap = {
+                mac: "macOS",
+                win: "Windows",
+                linux: "Linux",
+                cros: "ChromeOS",
+                android: "Android",
+                openbsd: "OpenBSD",
+            };
+            resolve(osMap[info.os] ?? "Unknown");
+        });
+    });
 }
 
 // Debounce

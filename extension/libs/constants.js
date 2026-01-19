@@ -12,7 +12,11 @@ export const BASE_DOMAINS = [
 export const MESSAGE_TYPES = {
   // init / pairing
   HOST_REGISTER: "init.host_register",
+  HOST_REGISTERED: "init.host_registered",
   PAIRING_KEY_REQUEST: "init.pairing_key_request",
+  PAIRING_KEY: "init.pairing_key",
+  PAIRING_KEY_VALID: "init.pairing_key_valid",
+
 
   // connection
   HEARTBEAT: "connection.heartbeat",
@@ -20,6 +24,7 @@ export const MESSAGE_TYPES = {
   DISCONNECT: "connection.disconnect",
   UNPAIR: "connection.unpair",
   DESTROY: "connection.destroy",
+  STATUS: "connection.status",
 
   // media
   MEDIA_LIST: "media.list",
@@ -64,6 +69,8 @@ export const CONTROL_EVENTS = {
   TOGGLE_MUTE: "control.toggle_mute",
   SET_VOLUME: "control.set_volume",
 
-  // state sync
+  // state
   STATE_UPDATE: "control.state_update",
+  SELECT_ACTIVE_TAB: "media.select_tab"
 };
+
