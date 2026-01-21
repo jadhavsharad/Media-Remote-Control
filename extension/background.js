@@ -1,156 +1,156 @@
-import { MEDIA_URL_PATTERNS, CHANNELS, SESSION_EVENTS, MEDIA_EVENTS, CONTROL_EVENTS } from "./constants.js";
+// import { MEDIA_URL_PATTERNS, SESSION_EVENTS, MEDIA_EVENTS, CONTROL_EVENTS } from "./constants.js";
+import { MESSAGE_TYPES, CHANNELS, BASE_DOMAINS } from "./libs/constants.js";
+// import { onConnected, setConnectionState } from "./libs/helper.js";
+import { log } from "./libs/log.js";
 
-let sessionIdentity = null;
 let connected = false;
+let sessionIdentity = null;
+let hostToken = null;
 const remoteContext = new Map();
 const offscreenPath = 'offscreen.html';
 
-function log(log) {
-  console.log(log)
-}
-
-function setConnectedState(state) {
+// Connection management
+function setConnectionState(state) {
   connected = state;
   chrome.action.setBadgeText({ text: state ? "ON" : "" });
   chrome.action.setBadgeBackgroundColor({ color: state ? "#16a34a" : "#64748b" });
 }
 
-function onConnected(sessionId, hostToken) {
-  sessionIdentity = sessionId;
-  setConnectedState(true);
-  chrome.storage.local.set({ sessionIdentity, hostToken, connected: true });
+function onConnected(newSessionIdentity, newHostToken) {
+  sessionIdentity = newSessionIdentity;
+  hostToken = newHostToken;
+  setConnectionState()
+
+  chrome.storage.local.set({ sessionIdentity, hostToken, connected });
 }
 
 function onDisconnected() {
-  sessionIdentity = null;
+connected = false;
+}
+
+function onDestroy() {
   connected = false;
-  setConnectedState(false);
-  chrome.storage.local.set({ sessionIdentity: null, connected: false });
+  sessionIdentity = null;
+  hostToken = null;
   remoteContext.clear();
+chrome.storage.local.set({ sessionIdentity: null, hostToken: null, connected });
 }
 
+// // REPLACE WITH IS VALID MESSAGE TYPE
+// function isValidControlAction(action) {
+//   return action === "TOGGLE_PLAYBACK" || action === "MUTE_TAB";
+// }
+// // isValidMessageType(action)
 
-function isValidControlAction(action) {
-  return action === "TOGGLE_PLAYBACK" || action === "MUTE_TAB";
+// async function getMediaTabs() {
+//   const tabs = await chrome.tabs.query({});
+//   return tabs
+//     .filter(tab => tab.url && MEDIA_URL_PATTERNS.some(p => tab.url.includes(p)))
+//     .map(tab => ({
+//       tabId: tab.id,
+//       title: tab.title,
+//       url: tab.url,
+//       favIconUrl: tab.favIconUrl || null,
+//       muted: tab.mutedInfo?.muted || false
+//     }));
+// }
+
+// // validate tab exists
+function isValidMessageType(type) {
+  return Object.values(MESSAGE_TYPES).includes(type);
 }
 
-async function getMediaTabs() {
-  const tabs = await chrome.tabs.query({});
-  return tabs
-    .filter(tab => tab.url && MEDIA_URL_PATTERNS.some(p => tab.url.includes(p)))
-    .map(tab => ({
-      tabId: tab.id,
-      title: tab.title,
-      url: tab.url,
-      favIconUrl: tab.favIconUrl || null,
-      muted: tab.mutedInfo?.muted || false
-    }));
-}
+// // reinject content scripts
+// async function reinjectContentScripts() {
+//   const mediaTabs = await getMediaTabs();
+//   const failedTabs = [];
 
-// validate tab exists
-async function validateTab(tabId) {
-  try {
-    await chrome.tabs.get(tabId);
-    return true;
-  } catch {
-    return false;
-  }
-}
+//   for (const tab of mediaTabs) {
+//     try {
+//       await chrome.scripting.executeScript({
+//         target: { tabId: tab.tabId },
+//         files: ["content.js"]
+//       });
+//     } catch (err) {
+//       console.warn(`Failed to reinject into tab ${tab.tabId}:`, err);
+//       failedTabs.push(tab);
+//     }
+//   }
 
-// reinject content scripts
-async function reinjectContentScripts() {
-  const mediaTabs = await getMediaTabs();
-  const failedTabs = [];
-
-  for (const tab of mediaTabs) {
-    try {
-      await chrome.scripting.executeScript({
-        target: { tabId: tab.tabId },
-        files: ["content.js"]
-      });
-    } catch (err) {
-      console.warn(`Failed to reinject into tab ${tab.tabId}:`, err);
-      failedTabs.push(tab);
-    }
-  }
-
-  // Notify popup if any tabs failed
-  if (failedTabs.length > 0) {
-    chrome.runtime.sendMessage({
-      type: "TO_POPUP",
-      payload: { type: "REINJECTION_FAILED", failedTabs }
-    }).catch(() => { });
-  }
-}
+//   // Notify popup if any tabs failed
+//   if (failedTabs.length > 0) {
+//     chrome.runtime.sendMessage({
+//       type: "TO_POPUP",
+//       payload: { type: "REINJECTION_FAILED", failedTabs }
+//     }).catch(() => { });
+//   }
+// }
 
 
-function DebouncedScheduler(fn, delay = 300) {
-  let timer = null;
+// function DebouncedScheduler(fn, delay = 300) {
+//     let timer = null;
 
-  return () => {
-    if (timer) return;
+//     return () => {
+//         if (timer) return;
 
-    timer = setTimeout(async () => {
-      timer = null;
-      try {
-        await fn();
-      } catch (e) {
-        console.warn("Scheduled task failed", e);
-      }
-    }, delay);
-  };
-}
+//         timer = setTimeout(async () => {
+//             timer = null;
+//             try {
+//                 await fn();
+//             } catch (e) {
+//                 console.warn("Scheduled task failed", e);
+      //       }
+//         }, delay);
+//     };
+// }
 
-async function sendMediaTabsList(extra = {}) {
-  const tabs = await getMediaTabs();
-  sendToServer({
-    type: MEDIA_EVENTS.MEDIA_TABS_LIST,
-    tabs,
-    ...extra,
-  });
-}
+// async function sendMediaTabsList(extra = {}) {
+//     const tabs = await getMediaTabs();
+//     sendToServer({
+//         type: MEDIA_EVENTS.MEDIA_TABS_LIST,
+//         tabs,
+//         ...extra,
+//     });
+// }
 
-const refreshMediaTabs = DebouncedScheduler(() => sendMediaTabsList());
+// const refreshMediaTabs = DebouncedScheduler(() => sendMediaTabsList());
 
-// Extension Reload Recovery - listeners
-chrome.runtime.onStartup.addListener(() => {
-  reinjectContentScripts();
-});
+// // Extension Reload Recovery - listeners
+// chrome.runtime.onStartup.addListener(() => {
+//     reinjectContentScripts();
+// });
 
-chrome.runtime.onInstalled.addListener(() => {
-  reinjectContentScripts();
-});
+// chrome.runtime.onInstalled.addListener(() => {
+//     reinjectContentScripts();
+// });
 
-// cleanup on tab removal
-chrome.tabs.onRemoved.addListener((tabId) => {
-  for (const [remoteId, ctx] of remoteContext.entries()) {
-    if (ctx.tabId === tabId) {
-      ctx.tabId = null;
-    }
-  }
-  refreshMediaTabs()
-});
+// // cleanup on tab removal
+// chrome.tabs.onRemoved.addListener((tabId) => {
+//     for (const [remoteId, ctx] of remoteContext.entries()) {
+//         if (ctx.tabId === tabId) {
+      //       ctx.tabId = null;
+//     }
+//   }
+//   refreshMediaTabs()
+// });
 
-// cleanup on navigation
-chrome.tabs.onUpdated.addListener((tabId, changeInfo) => {
-  for (const ctx of remoteContext.values()) {
-    if (ctx.tabId === tabId) {
-      ctx.tabId = null;
-    }
-  }
+// // cleanup on navigation
+// chrome.tabs.onUpdated.addListener((tabId, changeInfo) => {
+//     for (const ctx of remoteContext.values()) {
+//         if (ctx.tabId === tabId) {
+//             ctx.tabId = null;
+    //     }
+//     }
 
-  refreshMediaTabs()
-});
+//     refreshMediaTabs()
+// });
 
-chrome.tabs.onCreated.addListener(refreshMediaTabs);
+// chrome.tabs.onCreated.addListener(refreshMediaTabs);
 
-chrome.runtime.onMessage.addListener((msg, _, sendResponse) => {
-  switch (msg.type) {
-    case CHANNELS.FROM_SERVER:
-      handleServerMessage(msg.payload);
-      break;
-
-    case CHANNELS.FROM_CONTENT_SCRIPT:
+receiveMessage(CHANNELS.FROM_SERVER, (payload) => {
+      handleServerMessage(payload);
+      })
+receiveMessage(CHANNELS.FROM_CONTENT_SCRIPT:
       sendToServer(msg.update);
       break;
 
@@ -161,10 +161,10 @@ chrome.runtime.onMessage.addListener((msg, _, sendResponse) => {
 });
 
 async function handleServerMessage(msg) {
-
   if (!msg?.type) return;
+
   if (msg.type === "WS_CLOSED") {
-    setConnectedState(false);
+    setConnectionState(false);
     return;
   }
 
@@ -197,7 +197,7 @@ async function handleServerMessage(msg) {
       chrome.storage.local.get(["hostToken"], (res) => {
         const hostToken = res.hostToken;
         sendToServer({
-          type: SESSION_EVENTS.REGISTER_HOST,
+          type: MESSAGE_TYPES.HOST_REGISTER,
           hostToken: hostToken,
           info: {
             os,
@@ -208,13 +208,14 @@ async function handleServerMessage(msg) {
       break;
     }
 
-    case SESSION_EVENTS.HOST_REGISTERED: {
+    case MESSAGE_TYPES.HOST_REGISTERED: {
       onConnected(msg.SESSION_IDENTITY, msg.hostToken);
-      sendMediaTabsList();
+// log("[BACKGROUND REGISTERED]: ", msg)
+      sendMediaList();
       break;
     }
 
-    case SESSION_EVENTS.PAIR_CODE: {
+    case MESSAGE_TYPES.PAIR_CODE: {
       chrome.runtime.sendMessage({
         type: "TO_POPUP",
         payload: { type: "PAIR_CODE_RECEIVED", code: msg.code, ttl: msg.ttl }
@@ -222,32 +223,32 @@ async function handleServerMessage(msg) {
       break;
     }
 
-    case SESSION_EVENTS.REMOTE_JOINED: {
+    case MESSAGE_TYPES.REMOTE_JOINED: {
       remoteContext.delete(msg.remoteId);
       remoteContext.set(msg.remoteId, { tabId: null });
-      sendMediaTabsList({ remoteId: msg.remoteId });
+      sendMediaList({ remoteId: msg.remoteId });
       break;
     }
 
-    case MEDIA_EVENTS.SELECT_ACTIVE_TAB: {
+    case MESSAGE_TYPES.SELECT_ACTIVE_TAB: {
       const ctx = remoteContext.get(msg.remoteId);
       if (!ctx) return;
 
-      const tab = await validateTab(msg.tabId);
+      const tab = isValidMessageType(msg.tabId);
       if (!tab) return;
 
       ctx.tabId = msg.tabId;
 
       break;
     }
-    case CONTROL_EVENTS.CONTROL_EVENT: {
-      if (!isValidControlAction(msg.action)) return;
+    case MESSAGE_TYPES.CONTROL_EVENT: {
+      if (!isValidControlAction(msg.type)) return;
 
       const ctx = remoteContext.get(msg.remoteId);
       if (!ctx?.tabId) return;
 
       // validate before sending
-      const isValid = await validateTab(ctx.tabId);
+      const isValid = isValidMessageType(ctx.tabId);
       if (!isValid) {
         console.warn(`Tab ${ctx.tabId} no longer exists, clearing context`);
         ctx.tabId = null;
@@ -264,12 +265,12 @@ async function handleServerMessage(msg) {
       }
       break;
     }
-    case SESSION_EVENTS.HOST_DISCONNECTED: {
+    case MESSAGE_TYPES.HOST_DISCONNECTED: {
       resetSession("host_disconnected");
       break;
     }
 
-    case SESSION_EVENTS.PAIR_INVALID: {
+    case MESSAGE_TYPES.PAIRING_KEY_VALID: {
       remoteContext.clear();
       break;
     }
@@ -310,21 +311,14 @@ function handlePopup(req, sendResponse) {
   }
 }
 
-async function sendToServer(payload) {
-  await ensureOffscreen();
-  chrome.runtime.sendMessage({
-    type: CHANNELS.FROM_BACKGROUND,
-    payload
-  }).catch(console.warn);
-}
 
-async function ensureOffscreen() {
+// Offscreen document
+async function startOffscreen() {
   if (await chrome.offscreen.hasDocument()) return;
-
   await chrome.offscreen.createDocument({
     url: offscreenPath,
     reasons: ["BLOBS"],
-    justification: "Persistent WebSocket connection"
+    justification: "Persistent WebSocket connection",
   });
 }
 
@@ -334,30 +328,29 @@ function resetSession(reason = "unknown") {
   remoteContext.clear();
 }
 
-function getBrowser() {
-  if (navigator.userAgentData?.brands) {
-    const brands = navigator.userAgentData.brands.map(b => b.brand);
+// Browser Detection
+export function getBrowser() {
+      const brands = navigator.userAgentData?.brands?.map(b => b.brand) ?? [];
     if (brands.includes("Microsoft Edge")) return "Edge";
     if (brands.includes("Brave")) return "Brave";
     if (brands.includes("Google Chrome")) return "Chrome";
     if (brands.includes("Chromium")) return "Chromium";
-  }
-  return "Unknown";
+    return "Unknown";
 }
 
-function getOS() {
+// OS Detection
+export function getOS() {
   return new Promise((resolve) => {
     chrome.runtime.getPlatformInfo((info) => {
-      resolve(
-        {
+      const osMap =         {
           mac: "macOS",
           win: "Windows",
           linux: "Linux",
           cros: "ChromeOS",
           android: "Android",
           openbsd: "OpenBSD",
-        }[info.os] ?? "Unknown"
-      );
+        };
+      resolve(osMap[info.os] ?? "Unknown"      );
     });
   });
 }
@@ -387,9 +380,77 @@ async function handleControlEvent(ctx, msg) {
       // forward other actions to content script
       await chrome.tabs.sendMessage(ctx.tabId, {
         type: CONTROL_EVENTS.CONTROL_EVENT,
-        action: msg.action
-      });
+        //         action: msg.action
+//       });
+//   }
+// }
+
+startOffscreen();
+
+async function sendToServer(payload) {
+  await startOffscreen();
+  await sendMessage(CHANNELS.FROM_BACKGROUND, payload);
+}
+
+// Messaging
+async function sendMessage(channel, payload) {
+  try {
+    await chrome.runtime.sendMessage({ type: channel, payload });
+  } catch (e) {
+    log("[BACKGROUND SENDING ERROR]: ", e)
   }
 }
 
-ensureOffscreen();
+function receiveMessage(channel, handler) {
+  chrome.runtime.onMessage.addListener((msg, _, sendResponse) => {
+    if (!msg || msg.type !== channel) return;
+    return handler(msg.payload, sendResponse);
+  });
+}
+
+
+
+// Tabs & media
+function isMediaUrl(url) {
+  if (!url) return false;
+  try {
+    const { hostname } = new URL(url);
+    return BASE_DOMAINS.some(domain => hostname === domain || hostname.includes(`.${domain}`));
+  } catch {
+    return false;
+  }
+}
+
+async function getMediaList() {
+  const tabs = await chrome.tabs.query({});
+  return tabs
+    .filter(tab => isMediaUrl(tab.url))
+    .map(tab => ({
+      tabId: tab.id,
+      title: tab.title ?? "",
+      url: tab.url,
+      favIconUrl: tab.favIconUrl ?? null,
+      muted: tab.mutedInfo?.muted ?? false,
+    }));
+}
+
+async function sendMediaList(extra = {}) {
+  const tabs = await getMediaList();
+  const payload = { type: MESSAGE_TYPES.MEDIA_LIST, tabs, ...extra }
+  sendMessage(CHANNELS.FROM_BACKGROUND, payload)
+}
+
+// Debounce
+export function debouncedScheduler(fn, delay = 300) {
+  let timer = null;
+  return () => {
+    if (timer !== null) return;
+    timer = setTimeout(() => {
+      timer = null;
+      fn().catch(e => console.warn("Scheduled task failed", e));
+    }, delay);
+  };
+}
+
+const refreshMediaList = debouncedScheduler(() => sendMediaList());
+
