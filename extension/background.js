@@ -1,5 +1,6 @@
 // Background.js
 import { MESSAGE_TYPES, CHANNELS, BASE_DOMAINS, MEDIA_STATE } from "./libs/constants.js";
+import { MediaStateStore } from "./libs/mediaStateStore.js";
 
 const OFFSCREEN_PATH = 'offscreen.html';
 
@@ -79,6 +80,7 @@ class StateManager {
 }
 
 const state = new StateManager();
+const mediaStore = new MediaStateStore(state);
 
 /**
  * -----------------------------------------------------------------------------
@@ -132,6 +134,7 @@ const COMMAND_REGISTRY = {
 // Initialize immediately
 (async () => {
   await state.init();
+  await mediaStore.load();
   await ensureOffscreen();
   // Clean up stale contexts on boot
   refreshMediaList();
@@ -152,19 +155,36 @@ chrome.runtime.onInstalled.addListener(async () => {
 
 // Tab Listeners (Debounced where appropriate)
 const refreshMediaList = debouncedScheduler(async () => {
-  const mediaList = await sendMediaList();
-  // Auto-clean remote contexts for closed tabs
-  const validTabIds = new Set(mediaList.map(t => t.tabId));
-  const currentContexts = state.get("remoteContext");
+  const tabs = await sendMediaList(); // already returns enriched snapshot
+  const validTabIds = new Set(tabs.map(t => t.tabId));
 
-  let dirty = false;
-  for (const [remoteId, ctx] of Object.entries(currentContexts)) {
-    if (ctx.tabId && !validTabIds.has(ctx.tabId)) {
-      currentContexts[remoteId].tabId = null; // Detach closed tab
-      dirty = true;
+  const mediaState = mediaStore.getAll(), remoteContext = state.get("remoteContext");
+  let mediaDirty = false, contextDirty = false;
+
+  // Cleanup mediaState
+  for (const tabId in mediaState) {
+    if (!validTabIds.has(Number(tabId))) {
+      delete mediaState[tabId];
+      mediaDirty = true;
     }
   }
-  if (dirty) await state.set({ remoteContext: currentContexts });
+
+  // Cleanup remote contexts
+  for (const remoteId in remoteContext) {
+    const ctx = remoteContext[remoteId];
+    if (ctx.tabId && !validTabIds.has(ctx.tabId)) {
+      ctx.tabId = null;
+      contextDirty = true;
+    }
+  }
+
+  if (mediaDirty) {
+    await state.set({ mediaStateByTab: mediaState });
+  }
+
+  if (contextDirty) {
+    await state.set({ remoteContext });
+  }
 });
 
 chrome.tabs.onRemoved.addListener(() => refreshMediaList());
@@ -186,14 +206,16 @@ receiveMessage(CHANNELS.FROM_SERVER, async (payload) => {
 });
 
 // Route: Content Script -> Background
-receiveMessage(CHANNELS.FROM_CONTENT_SCRIPT, (payload, sender) => {
+receiveMessage(CHANNELS.FROM_CONTENT_SCRIPT, async (payload, sender) => {
   if (!isValidMessageType(payload.type)) return;
 
   // REPORT means the video state changed (e.g. user paused manually)
   // We forward this to the server so the remote UI updates
   if (payload.type === MESSAGE_TYPES.STATE_UPDATE && payload.intent === MESSAGE_TYPES.INTENT.REPORT) {
     if (sender && sender.tab) {
-      sendToServer({ ...payload, tabId: sender.tab.id });
+      const tabId = sender.tab.id;
+      await mediaStore.set(tabId, { playback: payload.state });
+      sendToServer({ ...payload, tabId });
     }
   }
 });
@@ -368,22 +390,41 @@ function handlePopup(req, sendResponse) {
 
 // --- Network / Offscreen ---
 
-async function ensureOffscreen() {
-  const hasDoc = await chrome.offscreen.hasDocument();
-  if (hasDoc) return;
+let creating;
 
-  try {
-    await chrome.offscreen.createDocument({
-      url: OFFSCREEN_PATH,
-      reasons: ["BLOBS"],
-      justification: "Persistent WebSocket connection",
-    });
-  } catch (e) {
-    if (!e.message.includes('Only one offscreen')) {
-      console.error("Failed to create offscreen:", e);
-    }
+async function ensureOffscreen() {
+  const offscreenUrl = chrome.runtime.getURL(OFFSCREEN_PATH);
+
+  const contexts = await chrome.runtime.getContexts({
+    contextTypes: ['OFFSCREEN_DOCUMENT'],
+    documentUrls: [offscreenUrl]
+  });
+
+  if (contexts.length > 0) return;
+
+  if (creating) {
+    await creating;
+    return;
   }
+
+  creating = (async () => {
+    try {
+      await chrome.offscreen.createDocument({
+        url: OFFSCREEN_PATH,
+        reasons: ['BLOBS'],
+        justification: 'WebSocket background connection',
+      });
+    } catch (e) {
+      if (!e.message.includes("Only a single offscreen")) {
+        throw e;
+      }
+    }
+  })();
+
+  await creating;
+  creating = null;
 }
+
 
 async function sendToServer(payload) {
   // We can only send if we have a way to talk to the offscreen doc
@@ -467,9 +508,18 @@ async function getMediaList() {
 
 async function sendMediaList(extra = {}) {
   const tabs = await getMediaList();
-  const payload = { type: MESSAGE_TYPES.MEDIA_LIST, tabs, ...extra };
+  const mediaState = mediaStore.getAll();
+
+  const enriched = tabs.map(tab => ({
+    ...tab,
+    playback: mediaState[tab.tabId]?.playback || "IDLE",
+    currentTime: mediaState[tab.tabId]?.currentTime || 0,
+    duration: mediaState[tab.tabId]?.duration || 0
+  }));
+
+  const payload = { type: MESSAGE_TYPES.MEDIA_LIST, tabs: enriched, ...extra };
   sendToServer(payload);
-  return tabs;
+  return enriched;
 }
 
 function isMediaUrl(url) {

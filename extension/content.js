@@ -1,3 +1,4 @@
+// content.js
 let currentVideo = null;
 let lastReportedState = null;
 let observer = null;
