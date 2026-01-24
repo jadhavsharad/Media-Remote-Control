@@ -30,7 +30,6 @@ wss.on("connection", (ws) => {
     } catch {
       return;
     }
-    console.log(msg)
 
     if (!isValidMessage(msg)) return;
 

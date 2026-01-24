@@ -44,8 +44,6 @@ function connect() {
 }
 connect();
 chrome.runtime.onMessage.addListener((msg) => {
-    console.log("[OFFSCREEN]: ", msg)
-
     
     if (msg.payload.type === MESSAGE_TYPES.HOST_DISCONNECT) {
         userDisconnected = true;
