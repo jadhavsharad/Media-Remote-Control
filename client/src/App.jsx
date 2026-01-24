@@ -95,7 +95,6 @@ const App = () => {
                     send({ type: MESSAGE_TYPES.VALIDATE_SESSION, trustToken: token });
                 } else {
                     setStatus(MESSAGE_TYPES.CONNECTED);
-                    console.log("No token found");
                 }
             };
 
@@ -141,6 +140,7 @@ const App = () => {
                 setToken(m.trustToken); // set the token in the ref
                 setHostInfo(m.hostInfo);
                 setStatus(MESSAGE_TYPES.PAIR_SUCCESS); // set the status to PAIR_SUCCESS
+                toast.success("Pairing successful");
             })
             .with({ type: MESSAGE_TYPES.PAIR_FAILED }, () => {
                 toast.error("Pairing failed");
@@ -149,6 +149,7 @@ const App = () => {
             .with({ type: MESSAGE_TYPES.SESSION_VALID }, (m) => {
                 setHostInfo(m.hostInfo);
                 setStatus(MESSAGE_TYPES.PAIR_SUCCESS); // set the status to PAIR_SUCCESS
+                toast.success("Session valid");
             })
             .with({ type: MESSAGE_TYPES.SESSION_INVALID }, () => {
                 setToken(null); // set the token in the ref to null
@@ -157,6 +158,7 @@ const App = () => {
             })
             .with({ type: MESSAGE_TYPES.HOST_DISCONNECTED }, () => {
                 setStatus(MESSAGE_TYPES.WAITING); // set the status to WAITING
+                toast.error("Host disconnected");
             })
             .with({ type: MESSAGE_TYPES.MEDIA_LIST, tabs: P.array() }, (m) => {
                 setTabsById(prev => {
@@ -194,13 +196,10 @@ const App = () => {
         if (!decodedText) return;
 
         if (isOpen()) {
-            console.log(decodedText)
             send({ type: MESSAGE_TYPES.EXCHANGE_PAIR_KEY, code: decodedText }); // send the pair key to the server
             setStatus(MESSAGE_TYPES.VERIFYING);
         }
     }, [send]);
-
-    console.log(Object.values(tabsById))
 
     return (
         <div className=" min-h-screen flex items-center justify-center text-white antialiased px-4 font-sans">
