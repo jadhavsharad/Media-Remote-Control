@@ -282,6 +282,10 @@ async function handleServerMessage(msg) {
     case MESSAGE_TYPES.HOST_DISCONNECTED:
       await state.set({ connected: false });
       break;
+
+    case MESSAGE_TYPES.NEW_TAB:
+      await handleNewTab(msg.url);
+      break;
   }
 }
 
@@ -290,6 +294,7 @@ async function handleWSOpen() {
   const hostToken = state.get("hostToken");
   const os = await getOS();
   const browser = getBrowser();
+  const extensionVersion = getExtensionVersion();
 
   // Re-inject/Wakeup tabs on reconnect
   const tabs = await getMediaList();
@@ -298,7 +303,7 @@ async function handleWSOpen() {
   sendToServer({
     type: MESSAGE_TYPES.HOST_REGISTER,
     hostToken: hostToken,
-    info: { os, browser }
+    info: { os, browser, extensionVersion }
   });
 }
 
@@ -307,6 +312,21 @@ async function handleSelectTab(remoteId, tabId) {
   if (!isValid) return;
 
   await state.updateRemoteContext(remoteId, { tabId });
+}
+
+async function handleNewTab(url) {
+  if (!url) return;
+
+  let targetUrl = url;
+  if (!url.startsWith("http://") && !url.startsWith("https://")) {
+    targetUrl = "https://" + url;
+  }
+
+  try {
+    await chrome.tabs.create({ url: targetUrl, active: true });
+  } catch (err) {
+    console.error("Failed to open new tab:", err);
+  }
 }
 
 /**
@@ -593,4 +613,9 @@ function getOS() {
       resolve(info.os || "Unknown");
     });
   });
+}
+
+function getExtensionVersion() {
+  const version = chrome.runtime.getVersion();
+  return version;
 }

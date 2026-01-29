@@ -13,6 +13,7 @@ export const MESSAGE_TYPES = {
   REMOTE_JOINED: "session.remote_joined",
   HOST_DISCONNECTED: "session.host_disconnected",
   HOST_RECONNECTED: "session.host_reconnected",
+  NEW_TAB: "session.new_tab",
 
   // connection
   BLOCKED: "Blocked",
@@ -46,3 +47,47 @@ export const MEDIA_STATE = {
   DURATION: "duration",       // values: number (seconds)
   TITLE: "title",             // values: string
 };
+
+
+export const SUPPORTED_SITES = {
+  YOUTUBE:{
+    name:"Youtube",
+    url:"https://www.youtube.com",
+    supported:true,
+  },
+  YOUTUBE_MUSIC:{
+    name:"YT Music",
+    url:"https://music.youtube.com",
+    supported:true,
+  },
+  SPOTIFY:{
+    name:"Spotify",
+    url:"https://open.spotify.com",
+    supported:false,
+  },
+  NETFLIX:{
+    name:"Netflix",
+    url:"https://www.netflix.com",
+    supported:false,
+  },
+  PRIME_VIDEO:{
+    name:"Prime Video",
+    url:"https://www.primevideo.com",
+    supported:false,
+  },
+  DISNEY_PLUS:{
+    name:"Disney Plus",
+    url:"https://www.disneyplus.com",
+    supported:false,
+  },
+  SONY_LIV:{
+    name:"Sony Liv",
+    url:"https://www.sonyliv.com",
+    supported:false,
+  },
+  MX_PLAYER:{
+    name:"MX Player",
+    url:"https://www.mxplayer.in",
+    supported:false,
+  },
+}

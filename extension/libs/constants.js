@@ -29,6 +29,7 @@ export const MESSAGE_TYPES = {
   HOST_DISCONNECT: "session.host_disconnect", // Action from host to disconnect
   HOST_RECONNECTED: "session.host_reconnected",
   HOST_RECONNECT: "session.host_reconnect",
+  NEW_TAB: "session.new_tab",
 
   // connection
   WS_OPEN: "connection.ws_open",

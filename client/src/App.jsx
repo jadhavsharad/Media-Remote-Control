@@ -2,18 +2,20 @@ import React, { useCallback, useEffect, useRef, useState } from 'react'
 import GlowDot from "./components/ui/glowDot";
 import Html5QrcodePlugin from "./components/Html5QrcodePlugin";
 import { match, P } from "ts-pattern";
-import { MEDIA_STATE, MESSAGE_TYPES } from './constants/constants';
+import { MEDIA_STATE, MESSAGE_TYPES, SUPPORTED_SITES } from './constants/constants';
 import { toast } from 'sonner';
-import { IoMdPlay, IoMdPause, IoMdVolumeOff, IoMdVolumeHigh, IoMdBulb } from "react-icons/io";
+import { IoMdPlay, IoMdPause, IoMdVolumeOff, IoMdVolumeHigh, IoMdBulb, IoMdClose, IoMdInformation, IoMdInformationCircle, IoMdInformationCircleOutline } from "react-icons/io";
 
-const WS_URL = import.meta.env.VITE_WS_URL || "ws://localhost:3001";
+const WS_URL = import.meta.env.VITE_WS_URL || "ws://172.25.174.21:3000";
+const REMOTE_VERSION = import.meta.env.VITE_REMOTE_VERSION || "1.0";
+const EXTENSION_VERSION = import.meta.env.VITE_EXTENSION_VERSION || "Unknown";
 const RECONNECT_DELAY = 2000;
 
 
 const STATUS_COLORS = {
     [MESSAGE_TYPES.PAIR_SUCCESS]: "bg-green-500 border-green-400",
     [MESSAGE_TYPES.CONNECTING]: "bg-yellow-500 border-yellow-400",
-    [MESSAGE_TYPES.CONNECTED]: "bg-zinc-50 border-zinc-50",
+    [MESSAGE_TYPES.CONNECTED]: "bg-blue-500 border-blue-400",
     [MESSAGE_TYPES.VERIFYING]: "bg-orange-500 border-orange-400",
     [MESSAGE_TYPES.DISCONNECTED]: "bg-red-500 border-red-400",
     [MESSAGE_TYPES.WAITING]: "bg-zinc-50 border-zinc-50",
@@ -204,18 +206,25 @@ const App = () => {
         }
     }, [send]);
 
+    
+    const triggerNewTab = (url) => {
+        send({ type: MESSAGE_TYPES.NEW_TAB, url });
+    }
+
     return (
-        <div className=" min-h-screen flex items-center justify-center text-white antialiased px-4 font-sans">
+        <div className=" min-h-screen flex flex-col gap-4 items-center justify-center text-white antialiased px-4 font-sans">
             <div className="w-full max-w-2xl bg-zinc-950 p-4 border border-zinc-800">
-                <header className="gap-3 flex flex-row justify-between">
+                <header className="gap-4 flex flex-row justify-between">
                     <h1 className="font-bold ">Media Remote Control</h1>
                     <div className="w-px min-h-full bg-zinc-700"></div>
-                    <div className="flex items-center gap-2 text-sm">
+                    <div className="flex items-center gap-2 text-xs">
                         <GlowDot colorClass={STATUS_COLORS[status]} />
                         <span className="z-10">Socket Status : {status}</span>
                     </div>
                 </header>
-                <small className="text-zinc-400 text-right flex justify-end text-xs">
+                <div className="flex flex-row justify-between">
+                    <small className='text-zinc-400 text-xs'> Remote Version : {REMOTE_VERSION}</small>
+                    <small className="text-zinc-400 text-xs">
                     {match(status)
                         .with(MESSAGE_TYPES.CONNECTED, () => "Connected to server. Waiting to pair")
                         .with(MESSAGE_TYPES.DISCONNECTED, () => "Disconnected with server.")
@@ -223,7 +232,7 @@ const App = () => {
                         .with(MESSAGE_TYPES.CONNECTING, () => "Connecting with server.")
                         .otherwise(() => null)}
                 </small>
-
+                </div>
                 <div className="w-full h-px bg-zinc-700 my-2"></div>
 
                 <div>
@@ -250,8 +259,9 @@ const App = () => {
                                     <p>
                                         <small className="text-zinc-400">Connection information</small>{" "}
                                         <br />
-                                        OS: {hostInfo?.os} <br />
-                                        Browser: {hostInfo?.browser} <br />
+                                        OS: {<span className="capitalize">{hostInfo?.os}</span> || "Unknown"} <br />
+                                        Browser: {hostInfo?.browser || "Unknown"} <br />
+                                        Extension: {("v" + hostInfo?.extensionVersion) || "Unknown"} <br />
                                         Media Tabs open: {(Object.keys(tabsById).length < 10) ? `0${Object.keys(tabsById).length}` : Object.keys(tabsById).length}
                                     </p>
                                     <button onClick={handleDisconnect} className="text-xs text-red-400 bg-red-500/10 px-4 py-2  cursor-pointer h-fit" data-testid="unpair-btn">{" "} Unpair</button>
@@ -273,6 +283,20 @@ const App = () => {
                                         {activeTab?.muted ? <><IoMdVolumeOff /> Unmute</> : <><IoMdVolumeHigh /> Mute</>}
                                     </button>
                                 </div>
+                                <div className=' w-full grid gap-2 grid-cols-2 md:grid-cols-3 lg:grid-cols-4'>
+                                    {Object.values(SUPPORTED_SITES).map((domain) => (
+                                        <div key={domain.url + domain.supported} className='space-y-px'>
+                                            <button onClick={() => triggerNewTab(domain.url)} className="cursor-pointer w-full overflow-hidden bg-zinc-900 text-white flex items-center gap-2 py-2 px-4 disabled:text-zinc-600">
+                                                <img className='w-6 h-6' src={`https://www.google.com/s2/favicons?sz=64&domain=${domain.url}`} alt={domain.url} />
+                                                <small className='capitalize'>{domain.name}</small>
+                                            </button>
+                                            <div className={`w-full h-px ${domain.supported ? "bg-green-500/75" : "bg-red-500/75"}`}></div>
+                                        </div>
+                                    ))}
+                                </div>
+                                <small className='text-zinc-400 flex gap-2 items-start'>
+                                    Note: Click a site to open it in the connected browser. Currently, only sites marked green can be controlled; support for other sites will be added soon.
+                                </small>
                             </div>
                         ))
                         .with(MESSAGE_TYPES.WAITING, () => (
@@ -288,6 +312,10 @@ const App = () => {
                         .otherwise(() => null)}
                 </div>
             </div>
+
+            <footer className='flex gap-4 flex-col items-center '>
+                <p>Made with ❤️ by <a href="https://github.com/jadhavsharad" target="_blank" rel="noopener noreferrer">Sharad Jadhav</a></p>
+            </footer>
         </div>
     )
 }

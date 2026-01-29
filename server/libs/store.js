@@ -22,6 +22,7 @@ class SessionStore {
       socket: ws,
       hostOS: info?.os,
       hostBrowser: info?.browser,
+      hostExtensionVersion: info?.extensionVersion,
       hostToken: hostToken,
       remotes: new Map(),
       pairCode: null,
