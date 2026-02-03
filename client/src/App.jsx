@@ -52,14 +52,14 @@ const App = () => {
             value,
             tabId: activeTabId
         });
-    }, [activeTabId]);
+    }, [activeTabId, send]);
 
     const activateTab = (tabId) => { setActiveTabId(tabId); send({ type: MESSAGE_TYPES.SELECT_ACTIVE_TAB, tabId }); }
     const deactivateTab = () => { setActiveTabId(null); }
     const handleDisconnect = () => {
         setToken(null);
         setStatus(MESSAGE_TYPES.DISCONNECTED);
-        window.location.reload();
+        globalThis.location.reload();
     }
 
     const handleTogglePlayback = () => {
@@ -134,7 +134,7 @@ const App = () => {
             wsRef.current?.close();
             clearTimeout(reconnectTimeoutRef.current);
         };
-    }, []);
+    }, [send]);
 
 
     const handleMessage = (msg) => {
@@ -150,7 +150,7 @@ const App = () => {
             .with({ type: MESSAGE_TYPES.PAIR_FAILED }, () => {
                 toast.error("Pairing failed");
                 setStatus(MESSAGE_TYPES.DISCONNECTED); // set the status to DISCONNECTED
-                window.location.reload();
+                globalThis.location.reload();
             })
             .with({ type: MESSAGE_TYPES.SESSION_VALID }, (m) => {
                 setHostInfo(m.hostInfo);
@@ -161,12 +161,12 @@ const App = () => {
                 setToken(null); // set the token in the ref to null
                 setStatus(MESSAGE_TYPES.DISCONNECTED); // set the status to DISCONNECTED
                 toast.error("Session invalid");
-                window.location.reload();
+                globalThis.location.reload();
             })
             .with({ type: MESSAGE_TYPES.HOST_DISCONNECTED }, () => {
                 setStatus(MESSAGE_TYPES.WAITING); // set the status to WAITING
                 toast.error("Host disconnected");
-                window.location.reload();
+                globalThis.location.reload();
             })
             .with({ type: MESSAGE_TYPES.MEDIA_LIST, tabs: P.array() }, (m) => {
                 setTabsById(prev => {
