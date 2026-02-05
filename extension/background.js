@@ -226,7 +226,7 @@ receiveMessage(CHANNELS.FROM_CONTENT_SCRIPT, async (payload, sender) => {
       if (key) {
         await mediaStore.set(tabId, { [key]: value });
       }
-      sendToServer({ ...payload, tabId });
+      sendToServer({ ...payload, tabId, timestamp: Date.now() });
     }
   }
 });
