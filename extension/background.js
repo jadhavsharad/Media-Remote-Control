@@ -68,7 +68,7 @@ class StateManager {
     if (data === null) {
       delete ctx[remoteId]; // Remove remote
     } else {
-      ctx[remoteId] = { ...(ctx[remoteId] || {}), ...data };
+      ctx[remoteId] = { ...(ctx[remoteId]), ...data };
     }
 
     await this.set({ remoteContext: ctx });
@@ -488,15 +488,13 @@ async function sendToTabSafe(tabId, message) {
   try {
     return await chrome.tabs.sendMessage(tabId, message);
   } catch (error) {
-    // Common error: "Could not establish connection. Receiving end does not exist."
-    // This implies the content script is not loaded.
-    console.warn(`Tab ${tabId} unreachable. Attempting reinjection...`);
+    console.warn(`Tab ${tabId} unreachable. Attempting reinjection...`, error);
     try {
       await injectContentScriptSingle(tabId);
-      // Retry once
+      // Retry once more
       return await chrome.tabs.sendMessage(tabId, message);
-    } catch (retryErr) {
-      console.error(`Failed to recover tab ${tabId}:`, retryErr);
+    } catch (error) {
+      console.error(`Failed to recover tab ${tabId}:`, error);
       return null;
     }
   }

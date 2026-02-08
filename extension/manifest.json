@@ -2,7 +2,7 @@
   "manifest_version": 3,
   "minimum_chrome_version": "116",
   "name": "Media Remote Control",
-  "version": "1.0",
+  "version": "1.5",
   "permissions": [
     "tabs",
     "storage",
