@@ -9,7 +9,7 @@ const VolumeControl = ({ activeTab, onVolumeChange }) => {
         <div className="bg-zinc-900 rounded-lg border border-zinc-900 ">
             <div className="flex justify-between items-center px-4 py-1">
                 <small className="text-xs font-mono tracking-wider font-semibold text-zinc-500">Volume</small>
-                <small className="text-xs font-mono tracking-wider font-semibold text-zinc-500">{currentVolume * 100}%</small>
+                <small className="text-xs font-mono tracking-wider font-semibold text-zinc-500">{Math.round(currentVolume * 100)}%</small>
             </div>
             <div className={`w-full flex items-center justify-center gap-2 rounded-[inherit] bg-zinc-950  px-4 py-2 ${!isEnabled && 'opacity-50 pointer-events-none'}`}>
                 <IoMdVolumeLow className={`shrink-0 text-center`} size={20} />
