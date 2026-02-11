@@ -5,7 +5,7 @@ import { CHANNELS, MESSAGE_TYPES } from "./libs/constants.js";
 let socket = null;
 let reconnect = null;
 let userDisconnected = false; // Prevents auto-reconnect after user disconnect
-const WS_URL = "ws://localhost:3000";
+const WS_URL = globalThis.WS_URL || "wss://media-remote-control-service.onrender.com/";
 
 function connect() {
     socket = new WebSocket(WS_URL);
@@ -44,18 +44,18 @@ function connect() {
 }
 connect();
 chrome.runtime.onMessage.addListener((msg) => {
-    
+
     if (msg.payload.type === MESSAGE_TYPES.HOST_DISCONNECT) {
         userDisconnected = true;
         if (isOpen()) socket.close();
     }
-    
+
     if (msg.payload.type === MESSAGE_TYPES.HOST_RECONNECT) {
         userDisconnected = false;
         if (!isOpen()) connect();
     }
-        if (msg.type !== CHANNELS.FROM_BACKGROUND)  return;
-        if (!isOpen()) return;
+    if (msg.type !== CHANNELS.FROM_BACKGROUND) return;
+    if (!isOpen()) return;
 
 
     socket.send(JSON.stringify(msg.payload));

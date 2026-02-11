@@ -106,7 +106,7 @@ function handleAuth(ws, msg, store) {
       type: MESSAGE_TYPES.PAIR_SUCCESS,
       trustToken,
       sessionId: identity.sessionId,
-      hostInfo: { os: session.hostOS, browser: session.hostBrowser }
+      hostInfo: { os: session.hostOS, browser: session.hostBrowser, extensionVersion: session.hostExtensionVersion }
     });
     return true;
   }
@@ -132,7 +132,7 @@ function handleAuth(ws, msg, store) {
     safeSend(ws, {
       type: MESSAGE_TYPES.SESSION_VALID,
       sessionId: identity.sessionId,
-      hostInfo: { os: session.hostOS, browser: session.hostBrowser }
+      hostInfo: { os: session.hostOS, browser: session.hostBrowser, extensionVersion: session.hostExtensionVersion }
     });
     return true;
   }

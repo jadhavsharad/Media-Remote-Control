@@ -1,10 +1,16 @@
 /* -------------------- DOMAINS -------------------- */
 export const BASE_DOMAINS = [
-  "youtube.com",
-  "netflix.com",
-  "primevideo.com",
-  "hotstar.com",
-  "vimeo.com",
+  "youtube",
+  "netflix",
+  "primevideo",
+  "hotstar",
+  "vimeo",
+  "sonyliv",
+  "jiosaavn",
+  "music.apple",
+  "mxplayer",
+  "music.amazon",
+  "spotify"
 ];
 
 /* -------------------- MESSAGE TYPES -------------------- */
@@ -28,6 +34,7 @@ export const MESSAGE_TYPES = {
   HOST_DISCONNECT: "session.host_disconnect", // Action from host to disconnect
   HOST_RECONNECTED: "session.host_reconnected",
   HOST_RECONNECT: "session.host_reconnect",
+  NEW_TAB: "session.new_tab",
 
   // connection
   WS_OPEN: "connection.ws_open",
@@ -72,6 +79,7 @@ export const MEDIA_STATE = {
   TIME: "currentTime",        // values: number (seconds)
   DURATION: "duration",       // values: number (seconds)
   TITLE: "title",             // values: string
+  VOLUME: "volume",           // values: number (0-100)
 };
 
 /* -------------------- POPUP ACTIONS -------------------- */

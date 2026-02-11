@@ -68,7 +68,7 @@ class StateManager {
     if (data === null) {
       delete ctx[remoteId]; // Remove remote
     } else {
-      ctx[remoteId] = { ...(ctx[remoteId] || {}), ...data };
+      ctx[remoteId] = { ...(ctx[remoteId]), ...data };
     }
 
     await this.set({ remoteContext: ctx });
@@ -119,6 +119,15 @@ const COMMAND_REGISTRY = {
       type: MESSAGE_TYPES.STATE_UPDATE,
       intent: MESSAGE_TYPES.INTENT.SET,
       key: MEDIA_STATE.TIME,
+      value
+    });
+  },
+
+  [MEDIA_STATE.VOLUME]: async (tabId, value) => {
+    return await sendToTabSafe(tabId, {
+      type: MESSAGE_TYPES.STATE_UPDATE,
+      intent: MESSAGE_TYPES.INTENT.SET,
+      key: MEDIA_STATE.VOLUME,
       value
     });
   }
@@ -209,13 +218,16 @@ receiveMessage(CHANNELS.FROM_SERVER, async (payload) => {
 receiveMessage(CHANNELS.FROM_CONTENT_SCRIPT, async (payload, sender) => {
   if (!isValidMessageType(payload.type)) return;
 
-  // REPORT means the video state changed (e.g. user paused manually)
+  // REPORT means the media state changed (e.g. user paused, changed volume, etc.)
   // We forward this to the server so the remote UI updates
   if (payload.type === MESSAGE_TYPES.STATE_UPDATE && payload.intent === MESSAGE_TYPES.INTENT.REPORT) {
     if (sender && sender.tab) {
       const tabId = sender.tab.id;
-      await mediaStore.set(tabId, { playback: payload.state });
-      sendToServer({ ...payload, tabId });
+      const { key, value } = payload;
+      if (key) {
+        await mediaStore.set(tabId, { [key]: value });
+      }
+      sendToServer({ ...payload, tabId, timestamp: Date.now() });
     }
   }
 });
@@ -282,6 +294,10 @@ async function handleServerMessage(msg) {
     case MESSAGE_TYPES.HOST_DISCONNECTED:
       await state.set({ connected: false });
       break;
+
+    case MESSAGE_TYPES.NEW_TAB:
+      await handleNewTab(msg.url);
+      break;
   }
 }
 
@@ -290,6 +306,7 @@ async function handleWSOpen() {
   const hostToken = state.get("hostToken");
   const os = await getOS();
   const browser = getBrowser();
+  const extensionVersion = getExtensionVersion();
 
   // Re-inject/Wakeup tabs on reconnect
   const tabs = await getMediaList();
@@ -298,7 +315,7 @@ async function handleWSOpen() {
   sendToServer({
     type: MESSAGE_TYPES.HOST_REGISTER,
     hostToken: hostToken,
-    info: { os, browser }
+    info: { os, browser, extensionVersion }
   });
 }
 
@@ -307,6 +324,21 @@ async function handleSelectTab(remoteId, tabId) {
   if (!isValid) return;
 
   await state.updateRemoteContext(remoteId, { tabId });
+}
+
+async function handleNewTab(url) {
+  if (!url) return;
+
+  let targetUrl = url;
+  if (!url.startsWith("http://") && !url.startsWith("https://")) {
+    targetUrl = "https://" + url;
+  }
+
+  try {
+    await chrome.tabs.create({ url: targetUrl, active: true });
+  } catch (err) {
+    console.error("Failed to open new tab:", err);
+  }
 }
 
 /**
@@ -456,15 +488,13 @@ async function sendToTabSafe(tabId, message) {
   try {
     return await chrome.tabs.sendMessage(tabId, message);
   } catch (error) {
-    // Common error: "Could not establish connection. Receiving end does not exist."
-    // This implies the content script is not loaded.
-    console.warn(`Tab ${tabId} unreachable. Attempting reinjection...`);
+    console.warn(`Tab ${tabId} unreachable. Attempting reinjection...`, error);
     try {
       await injectContentScriptSingle(tabId);
-      // Retry once
+      // Retry once more
       return await chrome.tabs.sendMessage(tabId, message);
-    } catch (retryErr) {
-      console.error(`Failed to recover tab ${tabId}:`, retryErr);
+    } catch (error) {
+      console.error(`Failed to recover tab ${tabId}:`, error);
       return null;
     }
   }
@@ -513,6 +543,7 @@ async function sendMediaList(extra = {}) {
   const enriched = tabs.map(tab => ({
     ...tab,
     playback: mediaState[tab.tabId]?.playback || "IDLE",
+    volume: mediaState[tab.tabId]?.volume ?? 1,
     currentTime: mediaState[tab.tabId]?.currentTime || 0,
     duration: mediaState[tab.tabId]?.duration || 0
   }));
@@ -526,7 +557,10 @@ function isMediaUrl(url) {
   if (!url) return false;
   try {
     const { hostname } = new URL(url);
-    return BASE_DOMAINS.some(domain => hostname === domain || hostname.endsWith("." + domain));
+    return BASE_DOMAINS.some(domain => {
+      const escaped = domain.replace(/\./g, "\\.");
+      return new RegExp(`(^|\\.)${escaped}\\.[a-z]{2,}(\\.[a-z]{2,})?$`, "i").test(hostname);
+    });
   } catch {
     return false;
   }
@@ -593,4 +627,9 @@ function getOS() {
       resolve(info.os || "Unknown");
     });
   });
+}
+
+function getExtensionVersion() {
+  const version = chrome.runtime.getVersion();
+  return version;
 }

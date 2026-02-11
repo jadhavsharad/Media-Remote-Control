@@ -8,6 +8,17 @@ const __dirname = path.dirname(fileURLToPath(import.meta.url));
 
 export default defineConfig({
   plugins: [react(), tailwindcss()],
+  build: {
+    rollupOptions: {
+      output: {
+        manualChunks: {
+          'react-vendor': ['react', 'react-dom'],
+          'icons': ['react-icons'],
+          'qr-scanner': ['html5-qrcode'],
+        }
+      }
+    }
+  },
   test: {
     environment: 'jsdom',
     globals: true,
