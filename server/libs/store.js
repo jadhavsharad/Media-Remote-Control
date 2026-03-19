@@ -1,10 +1,5 @@
-const { MESSAGE_TYPES } = require("./constants");
+const { MESSAGE_TYPES, PAIR_CODE_TTL_MS, SESSION_TTL_MS, CLEANUP_INTERVAL_MS } = require("./constants");
 const { now, isOpen, safeSend } = require("./utils");
-
-const PAIR_CODE_TTL_MS = 60 * 1000;
-const TRUST_TOKEN_TTL_MS = 30 * 24 * 60 * 60 * 1000;
-const SESSION_TTL_MS = 24 * 60 * 60 * 1000;
-const CLEANUP_INTERVAL_MS = 30_000;
 
 class SessionStore {
   constructor(wss) {
