@@ -265,21 +265,11 @@ function isValidMessageType(type) {
 }
 
 function getBrowser() {
-  if (navigator.userAgentData?.brands) {
-    const brands = navigator.userAgentData.brands.map((b) => b.brand);
-    if (brands.includes("Brave")) return "Brave";
-    if (brands.includes("Microsoft Edge")) return "Edge";
-    return "Chrome";
-  }
-  return "Chrome";
+  return navigator.userAgentData.brands[2].brand;
 }
 
 function getOS() {
-  return new Promise((resolve) => {
-    chrome.runtime.getPlatformInfo((info) => {
-      resolve(info.os || "Unknown");
-    });
-  });
+  return navigator.userAgentData.platform;
 }
 
 function getExtensionVersion() {
