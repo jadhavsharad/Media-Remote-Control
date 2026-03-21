@@ -266,7 +266,7 @@ function isValidMessageType(type) {
 }
 
 function getBrowser() {
-  return navigator.userAgentData.brands[2].brand;
+  return navigator.userAgentData.brands[2].brand || "Unknown";
 }
 
 function getOS() {

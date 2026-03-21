@@ -27,7 +27,6 @@ class MessageRouter {
     let msg;
     try {
       msg = JSON.parse(raw.toString());
-      logger.info(msg.type);
     } catch {
       return;
     }

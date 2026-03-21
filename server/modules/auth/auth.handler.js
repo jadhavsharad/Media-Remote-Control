@@ -30,7 +30,6 @@ async function handleAuth(ws, msg, store) {
       if (result) {
         sessionId = result.sessionId;
         session = result.session;
-        logger.info(`Host re-connected to session ${sessionId}`);
 
         // Close ghost host if still connected
         const existingHostWs = store.memoryStore.getHostSocket(sessionId);
@@ -56,7 +55,6 @@ async function handleAuth(ws, msg, store) {
       hostToken = generateUUID();
       // Redis write + in-memory routing (handled inside createSession)
       session = await store.createSession(sessionId, hostToken, ws, info);
-      logger.info(`Created new host session ${sessionId}`);
     }
 
     ws.role = MESSAGE_TYPES.ROLE.HOST;
