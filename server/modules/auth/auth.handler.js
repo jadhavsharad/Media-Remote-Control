@@ -35,7 +35,7 @@ async function handleAuth(ws, msg, store) {
         // Close ghost host if still connected
         const existingHostWs = store.memoryStore.getHostSocket(sessionId);
         if (existingHostWs && isOpen(existingHostWs) && existingHostWs !== ws) {
-          existingHostWs.close();
+          existingHostWs.close(4000, "Session superseded");
           logger.warn(`Closed ghost host for ${sessionId}`);
         }
 
@@ -51,7 +51,7 @@ async function handleAuth(ws, msg, store) {
       }
     }
 
-    if (!session) {
+    if (!session && !existingHostToken) {
       sessionId = generateUUID();
       hostToken = generateUUID();
       // Redis write + in-memory routing (handled inside createSession)
@@ -180,7 +180,8 @@ async function attachRemoteSocket(ws, identity, trustToken, sessionId, session, 
   // Close old socket if still connected
   const existingWs = store.memoryStore.getRemoteSocket(sessionId, identity.id);
   if (existingWs && isOpen(existingWs)) {
-    existingWs.close();
+    existingWs.close(4000, "Session superseded");
+    logger.warn(`Closed ghost remote for ${sessionId} with remoteId ${identity.id}`);
   }
 
   ws.role = MESSAGE_TYPES.ROLE.REMOTE;

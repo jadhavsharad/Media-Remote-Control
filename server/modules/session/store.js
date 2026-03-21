@@ -1,6 +1,7 @@
 const { MESSAGE_TYPES } = require("../../shared/constants");
 const { TOKEN_TTL_MS, PAIR_CODE_TTL_MS, CLEANUP_INTERVAL_MS } = require("../../config");
 const { now, safeSend } = require("../../shared/utils");
+const logger = require("../../shared/logger");
 
 /**
  * Key-pattern helpers.
@@ -182,6 +183,14 @@ class SessionStore {
     });
   }
 
+  /**
+   * Removes a remote from the session's remotes set in Redis.
+   * Called on disconnect to prevent stale entries.
+   */
+  async removeRemoteFromSession(sessionId, remoteId) {
+    await this.redis.hdel(KEYS.sessionRemotes(sessionId), remoteId);
+  }
+
   /* ──────────────── Disconnect Handling ──────────────── */
 
   /**
@@ -192,7 +201,7 @@ class SessionStore {
     const route = this.memoryStore.routes.get(ws.sessionId);
     if (!route) return;
 
-    console.log(`[DISCONNECT] Host disconnected from session ${ws.sessionId}`);
+    logger.warn(`Host disconnected from session ${ws.sessionId}`);
 
     // Only update if this socket is still the registered host
     if (route.hostSocketId === ws.socketId) {
@@ -218,9 +227,9 @@ class SessionStore {
   startCleanup() {
     setInterval(() => {
       this.wss.clients.forEach((ws) => {
-        if (!ws.isAlive) {
-          return ws.terminate();
-        }
+        if (!ws.isAlive) return ws.terminate();
+        ws.isAlive = false;
+        ws.ping();
       });
     }, CLEANUP_INTERVAL_MS);
   }

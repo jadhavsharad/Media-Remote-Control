@@ -32,6 +32,9 @@ class ConnectionManager {
     ws.lastSeenAt = Date.now();
     ws.trustToken = null;
 
+    // Heartbeat: browser auto-responds to ping with pong
+    ws.on('pong', () => { ws.isAlive = true; });
+
     this.socketRegistry.register(socketId, ws);
   }
 
@@ -49,6 +52,7 @@ class ConnectionManager {
 
     if (ws.role === MESSAGE_TYPES.ROLE.REMOTE) {
       this.memoryStore.removeRemote(ws.sessionId, ws.remoteIdentityId);
+      await store.removeRemoteFromSession(ws.sessionId, ws.remoteIdentityId);
     }
   }
 }

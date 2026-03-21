@@ -238,6 +238,7 @@ function handlePopup(req, sendResponse) {
 
     case MESSAGE_TYPES.HOST_RECONNECT:
       _sendToServer({ type: MESSAGE_TYPES.HOST_RECONNECT });
+      sendResponse({ ok: true });
       break;
 
     default:

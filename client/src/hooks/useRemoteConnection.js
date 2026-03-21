@@ -3,7 +3,7 @@
  * Wires useWebSocket, createMessageHandler, sessionStorage, and user actions together.
  * Contains no transport or persistence logic directly.
  */
-import { useState, useCallback } from "react";
+import { useState, useCallback, useEffect } from "react";
 import { toast } from "sonner";
 import { MESSAGE_TYPES } from "../constants/constants";
 import { useWebSocket } from "./useWebSocket";
@@ -19,10 +19,17 @@ export const useRemoteConnection = () => {
     const [activeTabId, setActiveTabId] = useState(null);
     const [hostInfo, setHostInfo] = useState(null);
 
+    useEffect(() => {
+        if (activeTabId && !tabsById[activeTabId]) {
+            setActiveTabId(null);
+        }
+    }, [tabsById, activeTabId]);
+
+
     // --- Message Handler ---
     const handleMessage = useCallback(
         createMessageHandler({ setToken, setHostInfo, setStatus, setTabsById }),
-        []
+        [setToken, setHostInfo, setStatus, setTabsById]
     );
 
     // --- WS Lifecycle Callbacks ---

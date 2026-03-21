@@ -6,7 +6,8 @@
 import { useEffect, useRef, useCallback } from "react";
 import { MESSAGE_TYPES } from "../constants/constants";
 
-const RECONNECT_DELAY = 2000;
+const BASE_RECONNECT_DELAY = 2000;
+const MAX_RECONNECT_DELAY = 30000;
 
 /**
  * Manages a WebSocket connection with automatic reconnection.
@@ -21,6 +22,7 @@ export function useWebSocket(url, { onOpen, onMessage, onClose }) {
   const wsRef = useRef(null);
   const isMounted = useRef(true);
   const reconnectTimeoutRef = useRef(null);
+  const reconnectDelayRef = useRef(BASE_RECONNECT_DELAY);
 
   // Stable callbacks via refs to avoid reconnecting on every render
   const onOpenRef = useRef(onOpen);
@@ -42,6 +44,7 @@ export function useWebSocket(url, { onOpen, onMessage, onClose }) {
 
   useEffect(() => {
     isMounted.current = true;
+    reconnectDelayRef.current = BASE_RECONNECT_DELAY;
 
     const connect = () => {
       if (isOpen() || wsRef.current?.readyState === WebSocket.CONNECTING) return;
@@ -50,13 +53,16 @@ export function useWebSocket(url, { onOpen, onMessage, onClose }) {
 
       ws.onopen = () => {
         if (!isMounted.current) return;
+        reconnectDelayRef.current = BASE_RECONNECT_DELAY; // Reset on success
         onOpenRef.current?.(ws);
       };
 
       ws.onclose = () => {
         if (!isMounted.current) return;
         onCloseRef.current?.();
-        reconnectTimeoutRef.current = setTimeout(connect, RECONNECT_DELAY);
+        const delay = reconnectDelayRef.current;
+        reconnectDelayRef.current = Math.min(delay * 2, MAX_RECONNECT_DELAY);
+        reconnectTimeoutRef.current = setTimeout(connect, delay);
       };
 
       ws.onmessage = (event) => {

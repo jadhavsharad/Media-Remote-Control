@@ -27,9 +27,11 @@ class MessageRouter {
     let msg;
     try {
       msg = JSON.parse(raw.toString());
+      logger.info(msg.type);
     } catch {
       return;
     }
+
 
     if (!isValidMessage(msg)) {
       logger.fatal("Invalid message", msg);
@@ -47,7 +49,7 @@ class MessageRouter {
 
     // Rate limiting
     if (ws.sessionId && isRateLimited(ws)) {
-      logger.warn("Rate limiting");
+      logger.warn("Rate limiting", ws);
       return;
     }
 
@@ -62,16 +64,16 @@ class MessageRouter {
   _verifySession(ws) {
     if (ws.role === MESSAGE_TYPES.ROLE.HOST) {
       if (!this.memoryStore.isHostValid(ws.sessionId, ws.socketId)) {
-        console.warn("[Host Desync] Killing Socket");
-        ws.close();
+        logger.warn("[Host Desync] Killing Socket");
+        ws.close(4000, "Session desync");
         return false;
       }
     }
 
     if (ws.role === MESSAGE_TYPES.ROLE.REMOTE) {
       if (!this.memoryStore.isRemoteValid(ws.sessionId, ws.remoteIdentityId, ws.socketId)) {
-        console.warn("[Remote Desync] Killing Socket");
-        ws.close();
+        logger.warn("[Remote Desync] Killing Socket");
+        ws.close(4000, "Session desync");
         return false;
       }
     }
