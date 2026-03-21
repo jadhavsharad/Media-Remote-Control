@@ -1,7 +1,7 @@
 const crypto = require("crypto");
 const { MESSAGE_TYPES, MEDIA_STATE } = require("./constants");
-
-const RATE_LIMIT_MS = 200;
+const { RATE_LIMIT_MS } = require("../config");
+const logger = require("./logger");
 
 function generateUUID() {
   return crypto.randomUUID();
@@ -30,7 +30,7 @@ function safeSend(ws, payload) {
       ws.send(JSON.stringify(payload));
     }
   } catch (e) {
-    console.error("[WS_SEND_ERROR]", e);
+    logger.fatal("WS SEND ERROR: ", e);
   }
 }
 
