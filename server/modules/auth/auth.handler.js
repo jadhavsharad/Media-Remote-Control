@@ -1,7 +1,8 @@
 const logger = require("../../shared/logger");
+const { meta, send, close: closeSocket, terminate, subscribe } = require("../../transport/socket");
 const { MESSAGE_TYPES } = require("../../shared/constants");
 const { TOKEN_TTL_MS } = require("../../config");
-const { generateUUID, generatePairCode, now, safeSend, isOpen } = require("../../shared/utils");
+const { generateUUID, generatePairCode, now } = require("../../shared/utils");
 
 /**
  * Handles all authentication-phase messages.
@@ -12,11 +13,12 @@ const { generateUUID, generatePairCode, now, safeSend, isOpen } = require("../..
  */
 async function handleAuth(ws, msg, store) {
   const t = now();
+  const data = meta(ws);
 
   // --- HOST REGISTRATION ---
   if (msg.type === MESSAGE_TYPES.HOST_REGISTER) {
-    if (ws.role === MESSAGE_TYPES.ROLE.REMOTE) {
-      ws.terminate();
+    if (data.role === MESSAGE_TYPES.ROLE.REMOTE) {
+      terminate(ws);
       logger.fatal("Remote trying to register as host");
       return true;
     }
@@ -33,19 +35,19 @@ async function handleAuth(ws, msg, store) {
 
         // Close ghost host if still connected
         const existingHostWs = store.memoryStore.getHostSocket(sessionId);
-        if (existingHostWs && isOpen(existingHostWs) && existingHostWs !== ws) {
-          existingHostWs.close(4000, "Session superseded");
+        if (existingHostWs && existingHostWs !== ws) {
+          closeSocket(existingHostWs, 4000, "Session superseded");
           logger.warn(`Closed ghost host for ${sessionId}`);
         }
 
         // Redis write: persist new socketId
         await store.updateSession(sessionId, {
-          hostSocketId: ws.socketId,
+          hostSocketId: data.socketId,
           hostDisconnectedAt: null,
         });
 
         // In-memory: rebuild routing entry
-        store.memoryStore.setHost(sessionId, ws.socketId);
+        store.memoryStore.setHost(sessionId, data.socketId);
         hostToken = existingHostToken;
       }
     }
@@ -57,10 +59,12 @@ async function handleAuth(ws, msg, store) {
       session = await store.createSession(sessionId, hostToken, ws, info);
     }
 
-    ws.role = MESSAGE_TYPES.ROLE.HOST;
-    ws.sessionId = sessionId;
+    data.role = MESSAGE_TYPES.ROLE.HOST;
+    data.sessionId = sessionId;
 
-    safeSend(ws, {
+    logger.debug("Host registered", sessionId);
+
+    send(ws, {
       type: MESSAGE_TYPES.HOST_REGISTERED,
       SESSION_IDENTITY: sessionId,
       hostToken,
@@ -70,15 +74,17 @@ async function handleAuth(ws, msg, store) {
 
   // --- PAIRING CODE REQUEST ---
   if (msg.type === MESSAGE_TYPES.PAIRING_KEY_REQUEST) {
-    if (ws.role !== MESSAGE_TYPES.ROLE.HOST) return true;
+    if (data.role !== MESSAGE_TYPES.ROLE.HOST) return true;
 
     // In-memory: delete old code + set new code (no Redis)
-    store.deletePairCode(ws.sessionId);
+    store.deletePairCode(data.sessionId);
 
     const code = generatePairCode();
-    const ttl = store.setPairCode(code, ws.sessionId);
+    const ttl = store.setPairCode(code, data.sessionId);
 
-    safeSend(ws, {
+    logger.debug("Pairing key generated", code);
+    
+    send(ws, {
       type: MESSAGE_TYPES.PAIRING_KEY,
       code,
       ttl,
@@ -94,7 +100,7 @@ async function handleAuth(ws, msg, store) {
     const result = await store.resolvePairCode(code);
 
     if (!result) {
-      safeSend(ws, { type: MESSAGE_TYPES.PAIR_FAILED });
+      send(ws, { type: MESSAGE_TYPES.PAIR_FAILED });
       return true;
     }
 
@@ -105,7 +111,7 @@ async function handleAuth(ws, msg, store) {
     const identity = {
       id: remoteIdentityId,
       sessionId: pairedSessionId,
-      socketId: ws.socketId,
+      socketId: data.socketId,
       expiresAt: t + TOKEN_TTL_MS,
       revoked: false,
       trustToken,
@@ -116,8 +122,7 @@ async function handleAuth(ws, msg, store) {
 
     // Attach socket + populate routing map + persist membership
     await attachRemoteSocket(ws, identity, trustToken, pairedSessionId, session, store);
-
-    safeSend(ws, {
+    send(ws, {
       type: MESSAGE_TYPES.PAIR_SUCCESS,
       trustToken,
       sessionId: pairedSessionId,
@@ -127,6 +132,7 @@ async function handleAuth(ws, msg, store) {
         extensionVersion: session.hostExtensionVersion,
       },
     });
+    logger.debug("Remote paired", pairedSessionId);
     return true;
   }
 
@@ -138,24 +144,26 @@ async function handleAuth(ws, msg, store) {
     const identity = await store.getRemote(trustToken);
 
     if (!identity || identity.revoked || t > identity.expiresAt) {
-      safeSend(ws, { type: MESSAGE_TYPES.SESSION_INVALID });
+      send(ws, { type: MESSAGE_TYPES.SESSION_INVALID });
+      logger.warn("Session invalid", identity.sessionId);
       return true;
     }
 
     // Redis read: validate session exists + get host info
     const session = await store.getSession(identity.sessionId);
     if (!session) {
-      safeSend(ws, { type: MESSAGE_TYPES.SESSION_INVALID });
+      send(ws, { type: MESSAGE_TYPES.SESSION_INVALID });
+      logger.warn("Session invalid", identity.sessionId);
       return true;
     }
 
     // Redis write: update socketId + persist membership
-    await store.updateRemote(trustToken, { socketId: ws.socketId });
+    await store.updateRemote(trustToken, { socketId: data.socketId });
 
     // Attach socket + populate routing map
     await attachRemoteSocket(ws, identity, trustToken, identity.sessionId, session, store);
 
-    safeSend(ws, {
+    send(ws, {
       type: MESSAGE_TYPES.SESSION_VALID,
       sessionId: identity.sessionId,
       hostInfo: {
@@ -164,6 +172,7 @@ async function handleAuth(ws, msg, store) {
         extensionVersion: session.hostExtensionVersion,
       },
     });
+    logger.debug("Session validated", identity.sessionId);
     return true;
   }
 
@@ -175,28 +184,34 @@ async function handleAuth(ws, msg, store) {
  * Session is passed in to avoid a redundant Redis fetch.
  */
 async function attachRemoteSocket(ws, identity, trustToken, sessionId, session, store) {
+  const data = meta(ws);
+
   // Close old socket if still connected
   const existingWs = store.memoryStore.getRemoteSocket(sessionId, identity.id);
-  if (existingWs && isOpen(existingWs)) {
-    existingWs.close(4000, "Session superseded");
+  if (existingWs && existingWs !== ws) {
+    closeSocket(existingWs, 4000, "Session superseded");
     logger.warn(`Closed ghost remote for ${sessionId} with remoteId ${identity.id}`);
   }
 
-  ws.role = MESSAGE_TYPES.ROLE.REMOTE;
-  ws.sessionId = sessionId;
-  ws.remoteIdentityId = identity.id;
-  ws.trustToken = trustToken;
+  data.role = MESSAGE_TYPES.ROLE.REMOTE;
+  data.sessionId = sessionId;
+  data.remoteIdentityId = identity.id;
+  data.trustToken = trustToken;
+
+  // Subscribe to session topic for broadcasts (uWS auto-unsubscribes on close)
+  subscribe(ws, `session:${sessionId}`);
 
   // In-memory routing + Redis persistence
-  await store.addRemoteToSession(sessionId, identity.id, trustToken, ws.socketId);
+  await store.addRemoteToSession(sessionId, identity.id, trustToken, data.socketId);
 
   // Notify host (pure in-memory socket lookup)
   const hostWs = store.memoryStore.getHostSocket(sessionId);
   if (hostWs) {
-    safeSend(hostWs, {
+    send(hostWs, {
       type: MESSAGE_TYPES.REMOTE_JOINED,
       remoteId: identity.id,
     });
+    logger.debug("Remote joined", sessionId);
   }
 }
 

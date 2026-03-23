@@ -1,3 +1,5 @@
+const { meta } = require("../../transport/socket");
+const { close: closeSocket } = require("../../transport/socket");
 const { MESSAGE_TYPES } = require("../../shared/constants");
 const { isValidMessage, isRateLimited } = require("../../shared/utils");
 const { handleAuth } = require("../auth/auth.handler");
@@ -21,34 +23,36 @@ class MessageRouter {
   }
 
   /**
-   * Processes a raw incoming WebSocket message buffer.
+   * Processes a raw incoming WebSocket message string.
    */
   async handle(ws, raw, store) {
     let msg;
     try {
-      msg = JSON.parse(raw.toString());
+      msg = JSON.parse(raw);
     } catch {
       return;
     }
 
-
+    
     if (!isValidMessage(msg)) {
       logger.fatal("Invalid message", msg);
       return;
     }
-
+    
     // Auth messages hit Redis (security) and short-circuit
     if (await handleAuth(ws, msg, store)) return;
-
+    
     // Session integrity — pure in-memory
     if (!this._verifySession(ws)) {
       logger.fatal("Session integrity check failed");
       return;
     }
-
+    
     // Rate limiting
-    if (ws.sessionId && isRateLimited(ws)) {
-      logger.warn("Rate limiting", ws);
+    const data = meta(ws);
+    if (data.sessionId && isRateLimited(data)) {
+      logger.warn("Rate limiting");
+      logger.fatal(msg.type + " - Dropped")
       return;
     }
 
@@ -61,18 +65,20 @@ class MessageRouter {
    * Pure in-memory check — 0 Redis ops.
    */
   _verifySession(ws) {
-    if (ws.role === MESSAGE_TYPES.ROLE.HOST) {
-      if (!this.memoryStore.isHostValid(ws.sessionId, ws.socketId)) {
+    const data = meta(ws);
+
+    if (data.role === MESSAGE_TYPES.ROLE.HOST) {
+      if (!this.memoryStore.isHostValid(data.sessionId, data.socketId)) {
         logger.warn("[Host Desync] Killing Socket");
-        ws.close(4000, "Session desync");
+        closeSocket(ws, 4000, "Session desync");
         return false;
       }
     }
 
-    if (ws.role === MESSAGE_TYPES.ROLE.REMOTE) {
-      if (!this.memoryStore.isRemoteValid(ws.sessionId, ws.remoteIdentityId, ws.socketId)) {
+    if (data.role === MESSAGE_TYPES.ROLE.REMOTE) {
+      if (!this.memoryStore.isRemoteValid(data.sessionId, data.remoteIdentityId, data.socketId)) {
         logger.warn("[Remote Desync] Killing Socket");
-        ws.close(4000, "Session desync");
+        closeSocket(ws, 4000, "Session desync");
         return false;
       }
     }

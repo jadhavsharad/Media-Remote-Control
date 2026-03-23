@@ -178,24 +178,6 @@ class MemoryStore {
     return this.socketRegistry.get(socketId) || null;
   }
 
-  /**
-   * Returns all live remote WebSockets for a session.
-   *
-   * @param {string} sessionId
-   * @returns {Map<string, WebSocket>} remoteId → WebSocket
-   */
-  getAllRemoteSockets(sessionId) {
-    const result = new Map();
-    const route = this.routes.get(sessionId);
-    if (!route) return result;
-
-    for (const [remoteId, socketId] of route.remotes) {
-      const ws = this.socketRegistry.get(socketId);
-      if (ws) result.set(remoteId, ws);
-    }
-    return result;
-  }
-
   /* ──────────────── Integrity Checks ──────────────── */
 
   /**

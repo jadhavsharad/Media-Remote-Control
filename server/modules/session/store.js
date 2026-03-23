@@ -1,6 +1,7 @@
+const { meta, publish } = require("../../transport/socket");
 const { MESSAGE_TYPES } = require("../../shared/constants");
-const { TOKEN_TTL_MS, PAIR_CODE_TTL_MS, CLEANUP_INTERVAL_MS } = require("../../config");
-const { now, safeSend } = require("../../shared/utils");
+const { TOKEN_TTL_MS, PAIR_CODE_TTL_MS } = require("../../config");
+const { now } = require("../../shared/utils");
 const logger = require("../../shared/logger");
 
 /**
@@ -25,14 +26,10 @@ class SessionStore {
   /**
    * @param {import("@upstash/redis").Redis} redis
    * @param {import("../../lib/memory-store")} memoryStore
-   * @param {WebSocket.Server} wss
    */
-  constructor(redis, memoryStore, wss) {
+  constructor(redis, memoryStore) {
     this.redis = redis;
     this.memoryStore = memoryStore;
-    this.wss = wss;
-
-    this.startCleanup();
   }
 
   /* ──────────────── Sessions ──────────────── */
@@ -42,13 +39,14 @@ class SessionStore {
    * Persists to Redis + registers in the in-memory routing map.
    */
   async createSession(id, hostToken, ws, info) {
+    const data = meta(ws);
     const sessionData = {
       hostOS: info?.os || null,
       hostBrowser: info?.browser || null,
       hostExtensionVersion: info?.extensionVersion || null,
       hostToken,
       hostDisconnectedAt: null,
-      hostSocketId: ws.socketId,
+      hostSocketId: data.socketId,
     };
 
     const ttlSeconds = Math.ceil(TOKEN_TTL_MS / 1000);
@@ -60,7 +58,7 @@ class SessionStore {
     ]);
 
     // Populate in-memory routing map
-    this.memoryStore.setHost(id, ws.socketId);
+    this.memoryStore.setHost(id, data.socketId);
 
     return sessionData;
   }
@@ -198,40 +196,26 @@ class SessionStore {
    * Persists to Redis + clears in-memory routing + notifies remotes.
    */
   async handleHostDisconnect(ws) {
-    const route = this.memoryStore.routes.get(ws.sessionId);
+    const data = meta(ws);
+    const route = this.memoryStore.routes.get(data.sessionId);
     if (!route) return;
 
-    logger.warn(`Host disconnected from session ${ws.sessionId}`);
+    logger.warn(`Host disconnected from session ${data.sessionId}`);
 
     // Only update if this socket is still the registered host
-    if (route.hostSocketId === ws.socketId) {
+    if (route.hostSocketId === data.socketId) {
       // In-memory: clear host
-      this.memoryStore.clearHost(ws.sessionId);
+      this.memoryStore.clearHost(data.sessionId);
 
       // Redis: persist disconnect
-      await this.updateSession(ws.sessionId, {
+      await this.updateSession(data.sessionId, {
         hostSocketId: null,
         hostDisconnectedAt: now(),
       });
     }
 
-    // Notify all remotes (pure in-memory socket lookup)
-    const remoteSockets = this.memoryStore.getAllRemoteSockets(ws.sessionId);
-    for (const remoteWs of remoteSockets.values()) {
-      safeSend(remoteWs, { type: MESSAGE_TYPES.HOST_DISCONNECTED });
-    }
-  }
-
-  /* ──────────────── Cleanup ──────────────── */
-
-  startCleanup() {
-    setInterval(() => {
-      this.wss.clients.forEach((ws) => {
-        if (!ws.isAlive) return ws.terminate();
-        ws.isAlive = false;
-        ws.ping();
-      });
-    }, CLEANUP_INTERVAL_MS);
+    // Notify all remotes via pub/sub
+    publish(`session:${data.sessionId}`, { type: MESSAGE_TYPES.HOST_DISCONNECTED });
   }
 }
 

@@ -4,11 +4,10 @@
  */
 require("dotenv").config();
 
-const express = require("express");
-const http = require("http");
-const WebSocket = require("ws");
+const uWS = require("uWebSockets.js");
 
 const { PORT } = require("./config");
+const { setApp } = require("./transport/socket");
 const redisClient = require("./lib/redis");
 const SocketRegistry = require("./lib/socket-registry");
 const MemoryStore = require("./lib/memory-store");
@@ -17,12 +16,8 @@ const ConnectionManager = require("./modules/connection/connection");
 const MessageRouter = require("./modules/messaging/router");
 const logger = require("./shared/logger");
 
-const app = express();
-const server = http.createServer(app);
-const wss = new WebSocket.Server({ server });
-
 /**
- * Boots the server: connects to Redis, wires dependencies, attaches handlers.
+ * Boots the server: connects to Redis, wires dependencies, starts uWS.
  */
 async function boot() {
   // 1. Connect to Upstash Redis
@@ -31,34 +26,48 @@ async function boot() {
   // 2. Create shared instances
   const socketRegistry = new SocketRegistry();
   const memoryStore = new MemoryStore(socketRegistry);
-  const store = new SessionStore(redis, memoryStore, wss);
+  const store = new SessionStore(redis, memoryStore);
   const connection = new ConnectionManager(socketRegistry, memoryStore);
   const router = new MessageRouter(memoryStore);
 
-  // 3. Wire WebSocket events
-  wss.on("connection", (ws) => {
-    connection.attach(ws);
-    logger.silent("Client connected");
-    ws.on("message", (raw) => {
+  // 3. Create uWS app with WebSocket + HTTP routes
+  const app = uWS.App();
+  setApp(app);
+
+  app.ws("/*", {
+    idleTimeout: 60,
+    maxPayloadLength: 64 * 1024,
+
+    open: (ws) => {
+      connection.attach(ws);
+      logger.debug("Client connected");
+    },
+
+    message: (ws, message) => {
+      const raw = Buffer.from(message).toString();
       router.handle(ws, raw, store);
-    });
-    ws.on("close", () => {
+    },
+
+    close: (ws) => {
       connection.onClose(ws, store);
       logger.warn("Client disconnected");
+    },
+  })
+    .get("/ping", (res) => {
+      logger.info("Ping");
+      res.end("pong");
+    })
+    .get("/", (res) => {
+      res.end("Secure Server Running");
+    })
+    .listen(PORT, (listenSocket) => {
+      if (listenSocket) {
+        logger.info(`🚀 Secure server listening on: ${PORT}`);
+      } else {
+        logger.error(`❌ Failed to listen on port ${PORT}`);
+        process.exit(1);
+      }
     });
-    ws.on("error", () => {
-      connection.onClose(ws, store);
-      logger.error("Error in client");
-    });
-  });
-
-  // 4. HTTP routes
-  app.get("/ping", (req, res) => res.status(200).send("pong"));
-
-  app.get("/", (_, res) => res.send("Secure Server Running"));
-
-  // 5. Start listening
-  server.listen(PORT, () => logger.info(`🚀 Secure server listening on: ${PORT}`));
 }
 
 if (require.main === module) {
@@ -68,4 +77,4 @@ if (require.main === module) {
   });
 }
 
-module.exports = { server, app, wss };
+module.exports = { boot };

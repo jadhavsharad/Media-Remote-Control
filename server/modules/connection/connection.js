@@ -1,3 +1,4 @@
+const { meta } = require("../../transport/socket");
 const { MESSAGE_TYPES } = require("../../shared/constants");
 const { generateUUID } = require("../../shared/utils");
 
@@ -23,36 +24,35 @@ class ConnectionManager {
    */
   attach(ws) {
     const socketId = generateUUID();
+    const data = meta(ws);
 
-    ws.socketId = socketId;
-    ws.isAlive = true;
-    ws.role = null;
-    ws.sessionId = null;
-    ws.remoteIdentityId = null;
-    ws.lastSeenAt = Date.now();
-    ws.trustToken = null;
-
-    // Heartbeat: browser auto-responds to ping with pong
-    ws.on('pong', () => { ws.isAlive = true; });
+    data.socketId = socketId;
+    data.role = null;
+    data.sessionId = null;
+    data.remoteIdentityId = null;
+    data.lastSeenAt = Date.now();
+    data.trustToken = null;
 
     this.socketRegistry.register(socketId, ws);
   }
 
   /**
-   * Handles disconnection (called on both 'close' and 'error' events).
+   * Handles disconnection (called on 'close' event).
    * Cleans up SocketRegistry + MemoryStore + delegates to SessionStore for persistence.
    */
   async onClose(ws, store) {
-    // Remove from socket registry
-    this.socketRegistry.remove(ws.socketId);
+    const data = meta(ws);
 
-    if (ws.role === MESSAGE_TYPES.ROLE.HOST) {
+    // Remove from socket registry
+    this.socketRegistry.remove(data.socketId);
+
+    if (data.role === MESSAGE_TYPES.ROLE.HOST) {
       await store.handleHostDisconnect(ws);
     }
 
-    if (ws.role === MESSAGE_TYPES.ROLE.REMOTE) {
-      this.memoryStore.removeRemote(ws.sessionId, ws.remoteIdentityId);
-      await store.removeRemoteFromSession(ws.sessionId, ws.remoteIdentityId);
+    if (data.role === MESSAGE_TYPES.ROLE.REMOTE) {
+      this.memoryStore.removeRemote(data.sessionId, data.remoteIdentityId);
+      await store.removeRemoteFromSession(data.sessionId, data.remoteIdentityId);
     }
   }
 }
