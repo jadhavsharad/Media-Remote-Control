@@ -1,6 +1,7 @@
 // content.js
 let currentMedia = null;
 let lastReportedState = {};
+let mediaDiscoveryStarted = false;
 
 const MESSAGE_TYPES = {
   STATE_UPDATE: "control.state_update",
@@ -166,11 +167,30 @@ function discoverMedia() {
   attachMedia(candidate);
 }
 
-function startPolling() {
+function startMediaDiscovery() {
+  if (mediaDiscoveryStarted) return;
+  mediaDiscoveryStarted = true;
   discoverMedia();
-  setInterval(() => {
-    discoverMedia();
-  }, 2000);
+
+  // Debounce MutationObserver callbacks to avoid excessive calls
+  let debounceTimer = null;
+  const debouncedDiscover = () => {
+    if (debounceTimer) clearTimeout(debounceTimer);
+    debounceTimer = setTimeout(() => {
+      debounceTimer = null;
+      discoverMedia();
+    }, 500);
+  };
+
+  // Watch for DOM changes that might add/remove media elements
+  const observer = new MutationObserver(debouncedDiscover);
+  observer.observe(document.body, {
+    childList: true,
+    subtree: true,
+  });
+
+  // Fallback poll at a longer interval for edge cases
+  setInterval(discoverMedia, 10000);
 }
 
 // ============================================================================
@@ -248,4 +268,4 @@ chrome.runtime.onMessage.addListener((msg, sender, sendResponse) => {
 });
 
 // Start the polling loop
-startPolling();
+startMediaDiscovery();

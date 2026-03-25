@@ -1,3 +1,10 @@
+/**
+ * shared/constants.js — Protocol constants (message types & media state).
+ *
+ * TTL values live in config/index.js — this file contains only
+ * the message-type enums shared across modules.
+ */
+
 /* -------------------- MESSAGE TYPES -------------------- */
 const MESSAGE_TYPES = {
   // init / pairing
@@ -9,7 +16,7 @@ const MESSAGE_TYPES = {
   EXCHANGE_PAIR_KEY: "init.exchange_pair_key",
   PAIR_SUCCESS: "init.pair_success",
   PAIR_FAILED: "init.pair_failed",
-
+  HOST_OFFLINE: "init.host_offline",
   // session
   VALIDATE_SESSION: "session.validate",
   SESSION_VALID: "session.valid",
@@ -54,5 +61,5 @@ const MEDIA_STATE = {
 
 module.exports = {
   MESSAGE_TYPES,
-  MEDIA_STATE
+  MEDIA_STATE,
 };

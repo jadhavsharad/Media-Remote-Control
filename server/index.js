@@ -1,85 +1,80 @@
-const express = require("express");
-const http = require("http");
-const WebSocket = require("ws");
-const { MESSAGE_TYPES } = require("./libs/constants");
-const SessionStore = require("./libs/store");
-const { handleAuth, routeMessage } = require("./libs/handlers");
-const { isValidMessage, isRateLimited } = require("./libs/utils");
+/**
+ * index.js — Pure wiring.
+ * Imports all modules and connects them. Contains no business logic.
+ */
+require("dotenv").config();
 
-const app = express();
-const server = http.createServer(app);
-const wss = new WebSocket.Server({ server });
-const PORT = process.env.PORT || 3000;
+const uWS = require("uWebSockets.js");
 
-// Initialize Store
-const store = new SessionStore(wss);
+const { PORT } = require("./config");
+const { setApp } = require("./transport/socket");
+const redisClient = require("./lib/redis");
+const SocketRegistry = require("./lib/socket-registry");
+const MemoryStore = require("./lib/memory-store");
+const SessionStore = require("./modules/session/store");
+const ConnectionManager = require("./modules/connection/connection");
+const MessageRouter = require("./modules/messaging/router");
+const logger = require("./shared/logger");
 
-wss.on("connection", (ws) => {
-  ws.isAlive = true;
-  ws.role = null;
-  ws.sessionId = null;
-  ws.remoteIdentityId = null;
-  ws.lastSeenAt = Date.now();
-  ws.trustToken = null;
+/**
+ * Boots the server: connects to Redis, wires dependencies, starts uWS.
+ */
+async function boot() {
+  // 1. Connect to Upstash Redis
+  const redis = await redisClient.connect();
 
-  ws.on("message", (raw) => {
+  // 2. Create shared instances
+  const socketRegistry = new SocketRegistry();
+  const memoryStore = new MemoryStore(socketRegistry);
+  const store = new SessionStore(redis, memoryStore);
+  const connection = new ConnectionManager(socketRegistry, memoryStore);
+  const router = new MessageRouter(memoryStore);
 
-    let msg;
-    try {
-      msg = JSON.parse(raw.toString());
-    } catch {
-      return;
-    }
+  // 3. Create uWS app with WebSocket + HTTP routes
+  const app = uWS.App();
+  setApp(app);
 
-    if (!isValidMessage(msg)) return;
+  app.ws("/*", {
+    idleTimeout: 60,
+    maxPayloadLength: 64 * 1024,
 
-    // Auth Handlers (Register, Pair, Validate)
-    if (handleAuth(ws, msg, store)) return;
+    open: (ws) => {
+      connection.attach(ws);
+      logger.debug("Client connected");
+    },
 
-    const session = store.getSession(ws.sessionId);
-    if (!session || session.socket !== ws && ws.role === MESSAGE_TYPES.ROLE.HOST) {
-      console.warn("[Host Desync] Killing Socket");
-      ws.close();
-      return;
-    }
+    message: (ws, message) => {
+      const raw = Buffer.from(message).toString();
+      router.handle(ws, raw, store);
+    },
 
-    if (ws.role === MESSAGE_TYPES.ROLE.REMOTE) {
-      const identity = store.getRemote(ws.trustToken);
-      if (!identity || identity.socket !== ws) {
-        console.warn("[Remote Desync] Killing Socket");
-        ws.close();
-        return;
+    close: (ws) => {
+      connection.onClose(ws, store);
+      logger.warn("Client disconnected");
+    },
+  })
+    .get("/ping", (res) => {
+      logger.info("Ping");
+      res.end("pong");
+    })
+    .get("/", (res) => {
+      res.end("Secure Server Running");
+    })
+    .listen(PORT, (listenSocket) => {
+      if (listenSocket) {
+        logger.info(`🚀 Secure server listening on: ${PORT}`);
+      } else {
+        logger.error(`❌ Failed to listen on port ${PORT}`);
+        process.exit(1);
       }
-    }
-
-
-    // Rate Limiting
-    if (ws.sessionId && isRateLimited(ws)) return;
-    // Message Routing
-    routeMessage(ws, msg, store);
-  });
-
-  ws.on("close", () => {
-    if (ws.role === MESSAGE_TYPES.ROLE.HOST) {
-      store.handleHostDisconnect(ws);
-    }
-  });
-
-  ws.on("error", () => {
-    if (ws.role === MESSAGE_TYPES.ROLE.HOST) {
-      store.handleHostDisconnect(ws);
-    }
-  });
-});
-
-app.get("/ping", (req, res) => {
-  res.status(200).send("pong");
-});
-
-app.get("/", (_, res) => res.send("Secure Server Running"));
-
-if (require.main === module) {
-  server.listen(PORT, () => console.log("🚀 Secure server listening on: ", PORT));
+    });
 }
 
-module.exports = { server, app, wss };
+if (require.main === module) {
+  boot().catch((err) => {
+    console.error("❌ Server failed to start:", err);
+    process.exit(1);
+  });
+}
+
+module.exports = { boot };

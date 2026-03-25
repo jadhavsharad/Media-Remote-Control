@@ -102,7 +102,6 @@ class PopupManager {
       });
     } catch (error) {
       console.warn("Status fetch failed, defaulting to disconnected:", error);
-      this.updateUIStatus("Status: Unavailable (Error)");
       this.updateState({ connected: false });
       this.updateUIStatus("Status: Disconnected");
     }

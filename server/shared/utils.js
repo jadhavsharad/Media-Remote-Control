@@ -1,7 +1,6 @@
 const crypto = require("crypto");
 const { MESSAGE_TYPES, MEDIA_STATE } = require("./constants");
-
-const RATE_LIMIT_MS = 200;
+const { RATE_LIMIT_MS } = require("../config");
 
 function generateUUID() {
   return crypto.randomUUID();
@@ -20,20 +19,6 @@ function now() {
   return Date.now();
 }
 
-function isOpen(ws) {
-  return ws.readyState === ws.OPEN;
-}
-
-function safeSend(ws, payload) {
-  try {
-    if (ws && isOpen(ws)) {
-      ws.send(JSON.stringify(payload));
-    }
-  } catch (e) {
-    console.error("[WS_SEND_ERROR]", e);
-  }
-}
-
 function isValidMessage(msg) {
   if (!msg || typeof msg !== "object") return false;
   // Basic validation that type exists in our protocol
@@ -41,10 +26,16 @@ function isValidMessage(msg) {
   return allTypes.includes(msg.type);
 }
 
-function isRateLimited(ws) {
+/**
+ * Rate limiter — operates on a metadata object (from meta(ws)).
+ *
+ * @param {object} data - The socket metadata object
+ * @returns {boolean} true if rate-limited
+ */
+function isRateLimited(data) {
   const t = now();
-  if (t - (ws.lastSeenAt || 0) < RATE_LIMIT_MS) return true;
-  ws.lastSeenAt = t;
+  if (t - (data.lastSeenAt || 0) < RATE_LIMIT_MS) return true;
+  data.lastSeenAt = t;
   return false;
 }
 
@@ -52,8 +43,6 @@ module.exports = {
   generateUUID,
   generatePairCode,
   now,
-  isOpen,
-  safeSend,
   isValidMessage,
   isRateLimited
 };
