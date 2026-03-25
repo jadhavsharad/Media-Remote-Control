@@ -8,7 +8,7 @@
 
 ### Why it exists
 
-Controlling YouTube, Netflix, or Other media from your phone without installing a native app is surprisingly hard. This project solves it by pairing a Chrome extension (the "host") with a lightweight web UI (the "remote") through a WebSocket relay server. No local network tricks, no mDNS — it works across networks.
+Controlling YouTube, Netflix, or Other media from your phone without installing a app is surprisingly hard. This project solves it by pairing a Chrome extension (the "host") with a lightweight web UI (the "remote") through a WebSocket relay server. No local network tricks, no mDNS — it works across networks.
 
 ### Architecture at a glance
 
